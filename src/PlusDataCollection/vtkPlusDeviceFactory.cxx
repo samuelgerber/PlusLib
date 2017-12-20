@@ -176,6 +176,10 @@ See License.txt for details.
   #include "vtkPlusOpenHapticsDevice.h"
 #endif
 
+#ifdef PLUS_USE_V4L2
+  #include "vtkPlusV4L2VideoSource.h"
+#endif
+
 //----------------------------------------------------------------------------
 
 vtkStandardNewMacro(vtkPlusDeviceFactory);
@@ -314,6 +318,10 @@ vtkPlusDeviceFactory::vtkPlusDeviceFactory()
 #endif
 #ifdef PLUS_USE_OpenCV_VIDEO
   RegisterDevice("OpenCVVideo", "vtkPlusOpenCVCaptureVideoSource", (PointerToDevice)&vtkPlusOpenCVCaptureVideoSource::New);
+#endif
+
+#ifdef PLUS_USE_V4L2
+  RegisterDevice("V4L2", "vtkPlusV4L2VideoSource", (PointerToDevice)&vtkPlusV4L2VideoSource::New);
 #endif
 
 #ifdef PLUS_USE_OPENHAPTICS

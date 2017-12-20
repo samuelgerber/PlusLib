@@ -82,7 +82,9 @@ IF(PLUS_USE_OvrvisionPro)
   OPTION(PLUS_TEST_OvrvisionPro "Enable testing of acquisition of stereo images from the OvrvisionPro" OFF)
 ENDIF()
 
-OPTION(PLUS_USE_V4L2 "Provide support for video4linux devices" OFF)
+IF(UNIX AND NOT APPLE)
+  OPTION(PLUS_USE_V4L2 "Provide support for video4linux devices" OFF)
+ENDIF()
 
 # --------------------------------------------------------------------------
 # Haptics
@@ -1282,7 +1284,7 @@ IF(PLUS_USE_EPIPHAN)
 
   LIST(APPEND ${PROJECT_NAME}_LIBS
     Epiphan
-  )
+    )
 ENDIF()
 
 # --------------------------------------------------------------------------
@@ -1399,7 +1401,7 @@ IF(PLUS_USE_INTERSON_VIDEO)
   LIST(APPEND ${PROJECT_NAME}_LIBS
     ${INTERSON_LIBRARY_DIR}/BmodeDLL${CMAKE_STATIC_LIBRARY_SUFFIX}
     ${INTERSON_LIBRARY_DIR}/USBprobeDLL${CMAKE_STATIC_LIBRARY_SUFFIX}
-
+    )
   LIST(APPEND ${PROJECT_NAME}_INCLUDE_DIRS
     ${INTERSON_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/Interson
@@ -1683,22 +1685,22 @@ IF(PLUS_USE_NVIDIA_DVP)
   SET(NVidiaDVP_HDRS ${CMAKE_CURRENT_BINARY_DIR}/nvConfigure.h)
 
   IF(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-    SET(NVidiaDVP_SRCS ${NVidiaDVP_SRCS}
+    LIST(APPEND NVidiaDVP_SRCS
       NVidiaDVP/vtkPlusNVidiaDVPVideoSourceWin32.cxx
       )
 
     IF(MSVC OR ${CMAKE_GENERATOR} MATCHES "Xcode")
-      SET(NVidiaDVP_HDRS ${NVidiaDVP_HDRS}
+      LIST(APPEND NVidiaDVP_HDRS
         NVidiaDVP/vtkPlusNVidiaDVPVideoSourceWin32.h
         )
     ENDIF()
   ELSEIF(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-    SET(NVidiaDVP_SRCS ${NVidiaDVP_SRCS}
+    LIST(APPEND NVidiaDVP_SRCS
       NVidiaDVP/vtkPlusNVidiaDVPVideoSourceLinux.cxx
       )
   ENDIF()
   
-  SET(NVidiaDVP_SRCS ${NVidiaDVP_SRCS}
+  LIST(APPEND NVidiaDVP_SRCS
     NVidiaDVP/glExtensions.cpp
     NVidiaDVP/nvGPUutil.cpp
     NVidiaDVP/nvSDIin.cpp
@@ -1707,7 +1709,7 @@ IF(PLUS_USE_NVIDIA_DVP)
     )
 
   IF(MSVC OR ${CMAKE_GENERATOR} MATCHES "Xcode")
-    SET(NVidiaDVP_HDRS ${NVidiaDVP_HDRS}
+    LIST(APPEND NVidiaDVP_HDRS
       NVidiaDVP/nvGPUutil.h
       NVidiaDVP/nvSDIin.h
       NVidiaDVP/nvSDIout.h
@@ -1853,7 +1855,7 @@ IF(PLUS_USE_V4L2)
     )
 
   LIST(APPEND ${PROJECT_NAME}_LIBS
-    V4L2
+    v4l2
     )
 ENDIF()
 
@@ -2030,5 +2032,5 @@ INSTALL(FILES ${External_Libraries_Static_Install}
 # --------------------------------------------------------------------------
 # Testing
 IF(BUILD_TESTING)
-  SUBDIRS(Testing)
+  ADD_SUBDIRECTORY(Testing)
 ENDIF()
