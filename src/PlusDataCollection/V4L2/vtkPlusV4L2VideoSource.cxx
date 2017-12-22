@@ -118,6 +118,20 @@ PlusStatus vtkPlusV4L2VideoSource::ReadConfiguration(vtkXMLDataElement* rootConf
     this->RequestedFormat->fmt.pix.height = frameSize[1];
   }
 
+  std::string pixelFormat;
+  XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL("PixelFormat", pixelFormat, deviceConfig);
+  if (deviceConfig->GetAttribute("PixelFormat") != nullptr)
+  {
+    this->RequestedFormat->fmt.pix.pixelformat = vtkPlusV4L2VideoSource::StringToFormat(pixelFormat);
+  }
+
+  std::string fieldOrder;
+  XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL("FieldOrder", fieldOrder, deviceConfig);
+  if (deviceConfig->GetAttribute("FieldOrder") != nullptr)
+  {
+    this->RequestedFormat->fmt.pix.field = vtkPlusV4L2VideoSource::StringToFieldOrder(fieldOrder);
+  }
+
   return PLUS_SUCCESS;
 }
 
@@ -1949,4 +1963,105 @@ v4l2_pix_format vtkPlusV4L2VideoSource::StringToFormat(const std::string& format
   {
     return v4l2_fourcc('x', 'x', 'x', 'x');
   }
+}
+
+//----------------------------------------------------------------------------
+std::string vtkPlusV4L2VideoSource::FieldOrderToString(v4l2_field field)
+{
+  switch(field)
+  {
+case V4L2_FIELD_ANY:
+{
+ return "V4L2_FIELD_ANY";
+}
+case V4L2_FIELD_NONE:
+{
+ return "V4L2_FIELD_NONE";
+}
+case V4L2_FIELD_TOP:
+{
+ return "V4L2_FIELD_TOP";
+}
+case V4L2_FIELD_BOTTOM:
+{
+ return "V4L2_FIELD_BOTTOM";
+}
+case V4L2_FIELD_INTERLACED:
+{
+ return "V4L2_FIELD_INTERLACED";
+}
+case V4L2_FIELD_SEQ_TB:
+{
+ return "V4L2_FIELD_SEQ_TB";
+}
+case V4L2_FIELD_SEQ_BT:
+{
+ return "V4L2_FIELD_SEQ_BT";
+}
+case V4L2_FIELD_ALTERNATE:
+{
+ return "V4L2_FIELD_ALTERNATE";
+}
+case V4L2_FIELD_INTERLACED_TB:
+{
+ return "V4L2_FIELD_INTERLACED_TB";
+}
+case V4L2_FIELD_INTERLACED_BT:
+{
+ return "V4L2_FIELD_INTERLACED_BT";
+}
+default:
+{
+      return "V4L2_FIELD_ANY";
+}
+}
+}
+
+//----------------------------------------------------------------------------
+v4l2_field vtkPlusV4L2VideoSource::StringToFieldOrder(const std::string& field)
+{
+if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_ANY", field))
+{
+return V4L2_FIELD_ANY;
+}
+else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_NONE", field))
+{
+return V4L2_FIELD_NONE;
+}
+else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_TOP", field))
+{
+return V4L2_FIELD_TOP;
+}
+else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_BOTTOM", field))
+{
+return V4L2_FIELD_BOTTOM;
+}
+else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_INTERLACED", field))
+{
+return V4L2_FIELD_INTERLACED;
+}
+else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_SEQ_TB", field))
+{
+return V4L2_FIELD_SEQ_TB;
+}
+else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_SEQ_BT", field))
+{
+return V4L2_FIELD_SEQ_BT;
+}
+else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_ALTERNATE", field))
+{
+return V4L2_FIELD_ALTERNATE;
+}
+else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_INTERLACED_TB", field))
+{
+return V4L2_FIELD_INTERLACED_TB;
+}
+else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_INTERLACED_BT", field))
+{
+return V4L2_FIELD_INTERLACED_BT;
+}
+else
+{
+return V4L2_FIELD_ANY;
+}
 }

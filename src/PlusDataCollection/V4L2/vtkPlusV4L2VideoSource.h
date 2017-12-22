@@ -12,6 +12,7 @@
 
 struct v4l2_format;
 struct v4l2_pix_format;
+struct v4l2_field;
 
 /*!
  \class vtkPlusV4L2VideoSource
@@ -79,8 +80,11 @@ protected:
   static std::string IOMethodToString(V4L2_IO_METHOD ioMethod);
   static V4L2_IO_METHOD StringToIOMethod(const std::string& method);
 
-  std::string FormatToString(v4l2_pix_format format);
+  static std::string FormatToString(v4l2_pix_format format);
   static v4l2_pix_format StringToFormat(const std::string& format);
+
+  static std::string FieldOrderToString(v4l2_field field);
+  static v4l2_field StringToFieldOrder(const std::string& field);
 
 protected:
   std::string DeviceName;
