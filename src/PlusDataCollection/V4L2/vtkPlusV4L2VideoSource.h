@@ -10,6 +10,8 @@
 #include "vtkPlusDataCollectionExport.h"
 #include "vtkPlusDevice.h"
 
+struct v4l2_format;
+
 /*!
  \class vtkPlusV4L2VideoSource
  \brief Class for interfacing an V4L2 device and recording frames into a Plus buffer
@@ -23,9 +25,10 @@ class vtkPlusDataCollectionExport vtkPlusV4L2VideoSource : public vtkPlusDevice
 {
   enum V4L2_IO_METHOD
   {
+    IO_METHOD_UNKNOWN,
     IO_METHOD_READ,
     IO_METHOD_MMAP,
-    IO_METHOD_USERPTR,
+    IO_METHOD_USERPTR
   };
 
   struct FrameBuffer
@@ -72,13 +75,19 @@ class vtkPlusDataCollectionExport vtkPlusV4L2VideoSource : public vtkPlusDevice
   virtual PlusStatus InternalStopRecording() VTK_OVERRIDE;
   virtual PlusStatus InternalStartRecording() VTK_OVERRIDE;
 
+  static std::string IOMethodToString(V4L2_IO_METHOD ioMethod);
+  static V4L2_IO_METHOD StringToIOMethod(const std::string& method);
+
   protected:
   std::string DeviceName;
-  V4L2_IO_METHOD IOMethod = IO_METHOD_MMAP;
-  int FileDescriptor = -1;
-  FrameBuffer* Frames = nullptr;
-  unsigned int BufferCount = 0;
-  bool ForceFormat = false;
+  V4L2_IO_METHOD IOMethod;
+  int FileDescriptor;
+
+  // TODO can we write to bufferitems directly?
+  FrameBuffer* Frames;
+  unsigned int BufferCount;
+
+  std::shared_ptr<v4l2_format> RequestedFormat = nullptr;
 };
 
-#endif // __vtkPlusOpenCVCaptureVideoSource_h
+#endif
