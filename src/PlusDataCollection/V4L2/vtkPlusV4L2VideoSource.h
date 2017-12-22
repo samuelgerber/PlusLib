@@ -11,6 +11,7 @@
 #include "vtkPlusDevice.h"
 
 struct v4l2_format;
+struct v4l2_pix_format;
 
 /*!
  \class vtkPlusV4L2VideoSource
@@ -33,11 +34,11 @@ class vtkPlusDataCollectionExport vtkPlusV4L2VideoSource : public vtkPlusDevice
 
   struct FrameBuffer
   {
-    void *start;
+    void* start;
     size_t length;
   };
 
-  public:
+public:
   static vtkPlusV4L2VideoSource* New();
   vtkTypeMacro(vtkPlusV4L2VideoSource, vtkPlusDevice);
   virtual void PrintSelf(ostream& os, vtkIndent indent) VTK_OVERRIDE;
@@ -60,7 +61,7 @@ class vtkPlusDataCollectionExport vtkPlusV4L2VideoSource : public vtkPlusDevice
   vtkSetStdStringMacro(DeviceName);
   vtkGetStdStringMacro(DeviceName);
 
-  protected:
+protected:
   vtkPlusV4L2VideoSource();
   ~vtkPlusV4L2VideoSource();
 
@@ -78,7 +79,10 @@ class vtkPlusDataCollectionExport vtkPlusV4L2VideoSource : public vtkPlusDevice
   static std::string IOMethodToString(V4L2_IO_METHOD ioMethod);
   static V4L2_IO_METHOD StringToIOMethod(const std::string& method);
 
-  protected:
+  std::string FormatToString(v4l2_pix_format format);
+  static v4l2_pix_format StringToFormat(const std::string& format);
+
+protected:
   std::string DeviceName;
   V4L2_IO_METHOD IOMethod;
   int FileDescriptor;

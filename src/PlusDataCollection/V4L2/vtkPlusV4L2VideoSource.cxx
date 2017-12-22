@@ -26,13 +26,13 @@
 
 //----------------------------------------------------------------------------
 
-vtkStandardNewMacro (vtkPlusV4L2VideoSource);
+vtkStandardNewMacro(vtkPlusV4L2VideoSource);
 
 //----------------------------------------------------------------------------
 
 namespace
 {
-  int xioctl(int fh, unsigned long int request, void *arg)
+  int xioctl(int fh, unsigned long int request, void* arg)
   {
     int r;
 
@@ -50,12 +50,12 @@ namespace
 
 //----------------------------------------------------------------------------
 vtkPlusV4L2VideoSource::vtkPlusV4L2VideoSource()
- : DeviceName("")
- , IOMethod(IO_METHOD_READ)
- , FileDescriptor(-1)
- , Frames(nullptr)
- , BufferCount(0)
- , RequestedFormat(std::make_shared<v4l2_format>())
+  : DeviceName("")
+  , IOMethod(IO_METHOD_READ)
+  , FileDescriptor(-1)
+  , Frames(nullptr)
+  , BufferCount(0)
+  , RequestedFormat(std::make_shared<v4l2_format>())
 {
 
 }
@@ -74,14 +74,14 @@ void vtkPlusV4L2VideoSource::PrintSelf(ostream& os, vtkIndent indent)
   os << indent << "IOMethod: " << this->IOMethodToString(this->IOMethod) << std::endl;
   os << indent << "BufferCount: " << this->BufferCount << std::endl;
 
-  if(this->FileDescriptor != -1)
+  if (this->FileDescriptor != -1)
   {
     os << indent << "Available formats: " << std::endl;
 
     v4l2_fmtdesc fmtdesc;
     CLEAR(fmtdesc);
     fmtdesc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    while (ioctl(this->FileDescriptor,VIDIOC_ENUM_FMT,&fmtdesc) == 0)
+    while (ioctl(this->FileDescriptor, VIDIOC_ENUM_FMT, &fmtdesc) == 0)
     {
       os << indent << fmtdesc.description << std::endl;
       fmtdesc.index++;
@@ -101,7 +101,7 @@ PlusStatus vtkPlusV4L2VideoSource::ReadConfiguration(vtkXMLDataElement* rootConf
   XML_READ_STRING_ATTRIBUTE_REQUIRED(DeviceName, deviceConfig);
   std::string ioMethod;
   XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL(IOMethod, ioMethod, rootConfigElement);
-  if(vtkPlusV4L2VideoSource::StringToIOMethod(ioMethod) != IO_METHOD_UNKNOWN)
+  if (vtkPlusV4L2VideoSource::StringToIOMethod(ioMethod) != IO_METHOD_UNKNOWN)
   {
     this->IOMethod = vtkPlusV4L2VideoSource::StringToIOMethod(ioMethod);
   }
@@ -112,7 +112,7 @@ PlusStatus vtkPlusV4L2VideoSource::ReadConfiguration(vtkXMLDataElement* rootConf
 
   int frameSize[3];
   XML_READ_VECTOR_ATTRIBUTE_NONMEMBER_OPTIONAL(int, 3, FrameSize, frameSize, deviceConfig);
-  if(deviceConfig->GetAttribute("FrameSize") != nullptr)
+  if (deviceConfig->GetAttribute("FrameSize") != nullptr)
   {
     this->RequestedFormat->fmt.pix.width = frameSize[0];
     this->RequestedFormat->fmt.pix.height = frameSize[1];
@@ -735,5 +735,1218 @@ vtkPlusV4L2VideoSource::V4L2_IO_METHOD vtkPlusV4L2VideoSource::StringToIOMethod(
   else
   {
     return IO_METHOD_UNKNOWN;
+  }
+}
+
+//----------------------------------------------------------------------------
+std::string vtkPlusV4L2VideoSource::FormatToString(v4l2_pix_format format)
+{
+  switch (format)
+  {
+    case V4L2_PIX_FMT_RGB332:
+    {
+      return "V4L2_PIX_FMT_RGB332";
+    }
+    case V4L2_PIX_FMT_RGB444:
+    {
+      return "V4L2_PIX_FMT_RGB444";
+    }
+    case V4L2_PIX_FMT_ARGB444:
+    {
+      return "V4L2_PIX_FMT_ARGB444";
+    }
+    case V4L2_PIX_FMT_XRGB444:
+    {
+      return "V4L2_PIX_FMT_XRGB444";
+    }
+    case V4L2_PIX_FMT_RGB555:
+    {
+      return "V4L2_PIX_FMT_RGB555";
+    }
+    case V4L2_PIX_FMT_ARGB555:
+    {
+      return "V4L2_PIX_FMT_ARGB555";
+    }
+    case V4L2_PIX_FMT_XRGB555:
+    {
+      return "V4L2_PIX_FMT_XRGB555";
+    }
+    case V4L2_PIX_FMT_RGB565:
+    {
+      return "V4L2_PIX_FMT_RGB565";
+    }
+    case V4L2_PIX_FMT_RGB555X:
+    {
+      return "V4L2_PIX_FMT_RGB555X";
+    }
+    case V4L2_PIX_FMT_ARGB555X:
+    {
+      return "V4L2_PIX_FMT_ARGB555X";
+    }
+    case V4L2_PIX_FMT_XRGB555X:
+    {
+      return "V4L2_PIX_FMT_XRGB555X";
+    }
+    case V4L2_PIX_FMT_RGB565X:
+    {
+      return "V4L2_PIX_FMT_RGB565X";
+    }
+    case V4L2_PIX_FMT_BGR666:
+    {
+      return "V4L2_PIX_FMT_BGR666";
+    }
+    case V4L2_PIX_FMT_BGR24:
+    {
+      return "V4L2_PIX_FMT_BGR24";
+    }
+    case V4L2_PIX_FMT_RGB24:
+    {
+      return "V4L2_PIX_FMT_RGB24";
+    }
+    case V4L2_PIX_FMT_BGR32:
+    {
+      return "V4L2_PIX_FMT_BGR32";
+    }
+    case V4L2_PIX_FMT_ABGR32:
+    {
+      return "V4L2_PIX_FMT_ABGR32";
+    }
+    case V4L2_PIX_FMT_XBGR32:
+    {
+      return "V4L2_PIX_FMT_XBGR32";
+    }
+    case V4L2_PIX_FMT_RGB32:
+    {
+      return "V4L2_PIX_FMT_RGB32";
+    }
+    case V4L2_PIX_FMT_ARGB32:
+    {
+      return "V4L2_PIX_FMT_ARGB32";
+    }
+    case V4L2_PIX_FMT_XRGB32:
+    {
+      return "V4L2_PIX_FMT_XRGB32";
+    }
+    case V4L2_PIX_FMT_GREY:
+    {
+      return "V4L2_PIX_FMT_GREY";
+    }
+    case V4L2_PIX_FMT_Y4:
+    {
+      return "V4L2_PIX_FMT_Y4";
+    }
+    case V4L2_PIX_FMT_Y6:
+    {
+      return "V4L2_PIX_FMT_Y6";
+    }
+    case V4L2_PIX_FMT_Y10:
+    {
+      return "V4L2_PIX_FMT_Y10";
+    }
+    case V4L2_PIX_FMT_Y12:
+    {
+      return "V4L2_PIX_FMT_Y12";
+    }
+    case V4L2_PIX_FMT_Y16:
+    {
+      return "V4L2_PIX_FMT_Y16";
+    }
+    case V4L2_PIX_FMT_Y16_BE:
+    {
+      return "V4L2_PIX_FMT_Y16_BE";
+    }
+    case V4L2_PIX_FMT_Y10BPACK:
+    {
+      return "V4L2_PIX_FMT_Y10BPACK";
+    }
+    case V4L2_PIX_FMT_PAL8:
+    {
+      return "V4L2_PIX_FMT_PAL8";
+    }
+    case V4L2_PIX_FMT_UV8:
+    {
+      return "V4L2_PIX_FMT_UV8";
+    }
+    case V4L2_PIX_FMT_YUYV:
+    {
+      return "V4L2_PIX_FMT_YUYV";
+    }
+    case V4L2_PIX_FMT_YYUV:
+    {
+      return "V4L2_PIX_FMT_YYUV";
+    }
+    case V4L2_PIX_FMT_YVYU:
+    {
+      return "V4L2_PIX_FMT_YVYU";
+    }
+    case V4L2_PIX_FMT_UYVY:
+    {
+      return "V4L2_PIX_FMT_UYVY";
+    }
+    case V4L2_PIX_FMT_VYUY:
+    {
+      return "V4L2_PIX_FMT_VYUY";
+    }
+    case V4L2_PIX_FMT_Y41P:
+    {
+      return "V4L2_PIX_FMT_Y41P";
+    }
+    case V4L2_PIX_FMT_YUV444:
+    {
+      return "V4L2_PIX_FMT_YUV444";
+    }
+    case V4L2_PIX_FMT_YUV555:
+    {
+      return "V4L2_PIX_FMT_YUV555";
+    }
+    case V4L2_PIX_FMT_YUV565:
+    {
+      return "V4L2_PIX_FMT_YUV565";
+    }
+    case V4L2_PIX_FMT_YUV32:
+    {
+      return "V4L2_PIX_FMT_YUV32";
+    }
+    case V4L2_PIX_FMT_HI240:
+    {
+      return "V4L2_PIX_FMT_HI240";
+    }
+    case V4L2_PIX_FMT_HM12:
+    {
+      return "V4L2_PIX_FMT_HM12";
+    }
+    case V4L2_PIX_FMT_M420:
+    {
+      return "V4L2_PIX_FMT_M420";
+    }
+    case V4L2_PIX_FMT_NV12:
+    {
+      return "V4L2_PIX_FMT_NV12";
+    }
+    case V4L2_PIX_FMT_NV21:
+    {
+      return "V4L2_PIX_FMT_NV21";
+    }
+    case V4L2_PIX_FMT_NV16:
+    {
+      return "V4L2_PIX_FMT_NV16";
+    }
+    case V4L2_PIX_FMT_NV61:
+    {
+      return "V4L2_PIX_FMT_NV61";
+    }
+    case V4L2_PIX_FMT_NV24:
+    {
+      return "V4L2_PIX_FMT_NV24";
+    }
+    case V4L2_PIX_FMT_NV42:
+    {
+      return "V4L2_PIX_FMT_NV42";
+    }
+    case V4L2_PIX_FMT_NV12M:
+    {
+      return "V4L2_PIX_FMT_NV12M";
+    }
+    case V4L2_PIX_FMT_NV21M:
+    {
+      return "V4L2_PIX_FMT_NV21M";
+    }
+    case V4L2_PIX_FMT_NV16M:
+    {
+      return "V4L2_PIX_FMT_NV16M";
+    }
+    case V4L2_PIX_FMT_NV61M:
+    {
+      return "V4L2_PIX_FMT_NV61M";
+    }
+    case V4L2_PIX_FMT_NV12MT:
+    {
+      return "V4L2_PIX_FMT_NV12MT";
+    }
+    case V4L2_PIX_FMT_NV12MT_16X16:
+    {
+      return "V4L2_PIX_FMT_NV12MT_16X16";
+    }
+    case V4L2_PIX_FMT_YUV410:
+    {
+      return "V4L2_PIX_FMT_YUV410";
+    }
+    case V4L2_PIX_FMT_YVU410:
+    {
+      return "V4L2_PIX_FMT_YVU410";
+    }
+    case V4L2_PIX_FMT_YUV411P:
+    {
+      return "V4L2_PIX_FMT_YUV411P";
+    }
+    case V4L2_PIX_FMT_YUV420:
+    {
+      return "V4L2_PIX_FMT_YUV420";
+    }
+    case V4L2_PIX_FMT_YVU420:
+    {
+      return "V4L2_PIX_FMT_YVU420";
+    }
+    case V4L2_PIX_FMT_YUV422P:
+    {
+      return "V4L2_PIX_FMT_YUV422P";
+    }
+    case V4L2_PIX_FMT_YUV420M:
+    {
+      return "V4L2_PIX_FMT_YUV420M";
+    }
+    case V4L2_PIX_FMT_YVU420M:
+    {
+      return "V4L2_PIX_FMT_YVU420M";
+    }
+    case V4L2_PIX_FMT_YUV422M:
+    {
+      return "V4L2_PIX_FMT_YUV422M";
+    }
+    case V4L2_PIX_FMT_YVU422M:
+    {
+      return "V4L2_PIX_FMT_YVU422M";
+    }
+    case V4L2_PIX_FMT_YUV444M:
+    {
+      return "V4L2_PIX_FMT_YUV444M";
+    }
+    case V4L2_PIX_FMT_YVU444M:
+    {
+      return "V4L2_PIX_FMT_YVU444M";
+    }
+    case V4L2_PIX_FMT_SBGGR8:
+    {
+      return "V4L2_PIX_FMT_SBGGR8";
+    }
+    case V4L2_PIX_FMT_SGBRG8:
+    {
+      return "V4L2_PIX_FMT_SGBRG8";
+    }
+    case V4L2_PIX_FMT_SGRBG8:
+    {
+      return "V4L2_PIX_FMT_SGRBG8";
+    }
+    case V4L2_PIX_FMT_SRGGB8:
+    {
+      return "V4L2_PIX_FMT_SRGGB8";
+    }
+    case V4L2_PIX_FMT_SBGGR10:
+    {
+      return "V4L2_PIX_FMT_SBGGR10";
+    }
+    case V4L2_PIX_FMT_SGBRG10:
+    {
+      return "V4L2_PIX_FMT_SGBRG10";
+    }
+    case V4L2_PIX_FMT_SGRBG10:
+    {
+      return "V4L2_PIX_FMT_SGRBG10";
+    }
+    case V4L2_PIX_FMT_SRGGB10:
+    {
+      return "V4L2_PIX_FMT_SRGGB10";
+    }
+    case V4L2_PIX_FMT_SBGGR10P:
+    {
+      return "V4L2_PIX_FMT_SBGGR10P";
+    }
+    case V4L2_PIX_FMT_SGBRG10P:
+    {
+      return "V4L2_PIX_FMT_SGBRG10P";
+    }
+    case V4L2_PIX_FMT_SGRBG10P:
+    {
+      return "V4L2_PIX_FMT_SGRBG10P";
+    }
+    case V4L2_PIX_FMT_SRGGB10P:
+    {
+      return "V4L2_PIX_FMT_SRGGB10P";
+    }
+    case V4L2_PIX_FMT_SBGGR10ALAW8:
+    {
+      return "V4L2_PIX_FMT_SBGGR10ALAW8";
+    }
+    case V4L2_PIX_FMT_SGBRG10ALAW8:
+    {
+      return "V4L2_PIX_FMT_SGBRG10ALAW8";
+    }
+    case V4L2_PIX_FMT_SGRBG10ALAW8:
+    {
+      return "V4L2_PIX_FMT_SGRBG10ALAW8";
+    }
+    case V4L2_PIX_FMT_SRGGB10ALAW8:
+    {
+      return "V4L2_PIX_FMT_SRGGB10ALAW8";
+    }
+    case V4L2_PIX_FMT_SBGGR10DPCM8:
+    {
+      return "V4L2_PIX_FMT_SBGGR10DPCM8";
+    }
+    case V4L2_PIX_FMT_SGBRG10DPCM8:
+    {
+      return "V4L2_PIX_FMT_SGBRG10DPCM8";
+    }
+    case V4L2_PIX_FMT_SGRBG10DPCM8:
+    {
+      return "V4L2_PIX_FMT_SGRBG10DPCM8";
+    }
+    case V4L2_PIX_FMT_SRGGB10DPCM8:
+    {
+      return "V4L2_PIX_FMT_SRGGB10DPCM8";
+    }
+    case V4L2_PIX_FMT_SBGGR12:
+    {
+      return "V4L2_PIX_FMT_SBGGR12";
+    }
+    case V4L2_PIX_FMT_SGBRG12:
+    {
+      return "V4L2_PIX_FMT_SGBRG12";
+    }
+    case V4L2_PIX_FMT_SGRBG12:
+    {
+      return "V4L2_PIX_FMT_SGRBG12";
+    }
+    case V4L2_PIX_FMT_SRGGB12:
+    {
+      return "V4L2_PIX_FMT_SRGGB12";
+    }
+    case V4L2_PIX_FMT_SBGGR12P:
+    {
+      return "V4L2_PIX_FMT_SBGGR12P";
+    }
+    case V4L2_PIX_FMT_SGBRG12P:
+    {
+      return "V4L2_PIX_FMT_SGBRG12P";
+    }
+    case V4L2_PIX_FMT_SGRBG12P:
+    {
+      return "V4L2_PIX_FMT_SGRBG12P";
+    }
+    case V4L2_PIX_FMT_SRGGB12P:
+    {
+      return "V4L2_PIX_FMT_SRGGB12P";
+    }
+    case V4L2_PIX_FMT_SBGGR16:
+    {
+      return "V4L2_PIX_FMT_SBGGR16";
+    }
+    case V4L2_PIX_FMT_SGBRG16:
+    {
+      return "V4L2_PIX_FMT_SGBRG16";
+    }
+    case V4L2_PIX_FMT_SGRBG16:
+    {
+      return "V4L2_PIX_FMT_SGRBG16";
+    }
+    case V4L2_PIX_FMT_SRGGB16:
+    {
+      return "V4L2_PIX_FMT_SRGGB16";
+    }
+    case V4L2_PIX_FMT_HSV24:
+    {
+      return "V4L2_PIX_FMT_HSV24";
+    }
+    case V4L2_PIX_FMT_HSV32:
+    {
+      return "V4L2_PIX_FMT_HSV32";
+    }
+    case V4L2_PIX_FMT_MJPEG:
+    {
+      return "V4L2_PIX_FMT_MJPEG";
+    }
+    case V4L2_PIX_FMT_JPEG:
+    {
+      return "V4L2_PIX_FMT_JPEG";
+    }
+    case V4L2_PIX_FMT_DV:
+    {
+      return "V4L2_PIX_FMT_DV";
+    }
+    case V4L2_PIX_FMT_MPEG:
+    {
+      return "V4L2_PIX_FMT_MPEG";
+    }
+    case V4L2_PIX_FMT_H264:
+    {
+      return "V4L2_PIX_FMT_H264";
+    }
+    case V4L2_PIX_FMT_H264_NO_SC:
+    {
+      return "V4L2_PIX_FMT_H264_NO_SC";
+    }
+    case V4L2_PIX_FMT_H264_MVC:
+    {
+      return "V4L2_PIX_FMT_H264_MVC";
+    }
+    case V4L2_PIX_FMT_H263:
+    {
+      return "V4L2_PIX_FMT_H263";
+    }
+    case V4L2_PIX_FMT_MPEG1:
+    {
+      return "V4L2_PIX_FMT_MPEG1";
+    }
+    case V4L2_PIX_FMT_MPEG2:
+    {
+      return "V4L2_PIX_FMT_MPEG2";
+    }
+    case V4L2_PIX_FMT_MPEG4:
+    {
+      return "V4L2_PIX_FMT_MPEG4";
+    }
+    case V4L2_PIX_FMT_XVID:
+    {
+      return "V4L2_PIX_FMT_XVID";
+    }
+    case V4L2_PIX_FMT_VC1_ANNEX_G:
+    {
+      return "V4L2_PIX_FMT_VC1_ANNEX_G";
+    }
+    case V4L2_PIX_FMT_VC1_ANNEX_L:
+    {
+      return "V4L2_PIX_FMT_VC1_ANNEX_L";
+    }
+    case V4L2_PIX_FMT_VP8:
+    {
+      return "V4L2_PIX_FMT_VP8";
+    }
+    case V4L2_PIX_FMT_VP9:
+    {
+      return "V4L2_PIX_FMT_VP9";
+    }
+    case V4L2_PIX_FMT_CPIA1:
+    {
+      return "V4L2_PIX_FMT_CPIA1";
+    }
+    case V4L2_PIX_FMT_WNVA:
+    {
+      return "V4L2_PIX_FMT_WNVA";
+    }
+    case V4L2_PIX_FMT_SN9C10X:
+    {
+      return "V4L2_PIX_FMT_SN9C10X";
+    }
+    case V4L2_PIX_FMT_SN9C20X_I420:
+    {
+      return "V4L2_PIX_FMT_SN9C20X_I420";
+    }
+    case V4L2_PIX_FMT_PWC1:
+    {
+      return "V4L2_PIX_FMT_PWC1";
+    }
+    case V4L2_PIX_FMT_PWC2:
+    {
+      return "V4L2_PIX_FMT_PWC2";
+    }
+    case V4L2_PIX_FMT_ET61X251:
+    {
+      return "V4L2_PIX_FMT_ET61X251";
+    }
+    case V4L2_PIX_FMT_SPCA501:
+    {
+      return "V4L2_PIX_FMT_SPCA501";
+    }
+    case V4L2_PIX_FMT_SPCA505:
+    {
+      return "V4L2_PIX_FMT_SPCA505";
+    }
+    case V4L2_PIX_FMT_SPCA508:
+    {
+      return "V4L2_PIX_FMT_SPCA508";
+    }
+    case V4L2_PIX_FMT_SPCA561:
+    {
+      return "V4L2_PIX_FMT_SPCA561";
+    }
+    case V4L2_PIX_FMT_PAC207:
+    {
+      return "V4L2_PIX_FMT_PAC207";
+    }
+    case V4L2_PIX_FMT_MR97310A:
+    {
+      return "V4L2_PIX_FMT_MR97310A";
+    }
+    case V4L2_PIX_FMT_JL2005BCD:
+    {
+      return "V4L2_PIX_FMT_JL2005BCD";
+    }
+    case V4L2_PIX_FMT_SN9C2028:
+    {
+      return "V4L2_PIX_FMT_SN9C2028";
+    }
+    case V4L2_PIX_FMT_SQ905C:
+    {
+      return "V4L2_PIX_FMT_SQ905C";
+    }
+    case V4L2_PIX_FMT_PJPG:
+    {
+      return "V4L2_PIX_FMT_PJPG";
+    }
+    case V4L2_PIX_FMT_OV511:
+    {
+      return "V4L2_PIX_FMT_OV511";
+    }
+    case V4L2_PIX_FMT_OV518:
+    {
+      return "V4L2_PIX_FMT_OV518";
+    }
+    case V4L2_PIX_FMT_STV0680:
+    {
+      return "V4L2_PIX_FMT_STV0680";
+    }
+    case V4L2_PIX_FMT_TM6000:
+    {
+      return "V4L2_PIX_FMT_TM6000";
+    }
+    case V4L2_PIX_FMT_CIT_YYVYUY:
+    {
+      return "V4L2_PIX_FMT_CIT_YYVYUY";
+    }
+    case V4L2_PIX_FMT_KONICA420:
+    {
+      return "V4L2_PIX_FMT_KONICA420";
+    }
+    case V4L2_PIX_FMT_JPGL:
+    {
+      return "V4L2_PIX_FMT_JPGL";
+    }
+    case V4L2_PIX_FMT_SE401:
+    {
+      return "V4L2_PIX_FMT_SE401";
+    }
+    case V4L2_PIX_FMT_S5C_UYVY_JPG:
+    {
+      return "V4L2_PIX_FMT_S5C_UYVY_JPG";
+    }
+    case V4L2_PIX_FMT_Y8I:
+    {
+      return "V4L2_PIX_FMT_Y8I";
+    }
+    case V4L2_PIX_FMT_Y12I:
+    {
+      return "V4L2_PIX_FMT_Y12I";
+    }
+    case V4L2_PIX_FMT_Z16:
+    {
+      return "V4L2_PIX_FMT_Z16";
+    }
+    case V4L2_PIX_FMT_MT21C:
+    {
+      return "V4L2_PIX_FMT_MT21C";
+    }
+    case V4L2_PIX_FMT_INZI:
+    {
+      return "V4L2_PIX_FMT_INZI";
+    }
+    default:
+    {
+      return "V4L2_PIX_FMT_XXXX";
+    }
+  }
+}
+
+//----------------------------------------------------------------------------
+v4l2_pix_format vtkPlusV4L2VideoSource::StringToFormat(const std::string& format)
+{
+  if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB332", format))
+  {
+    return V4L2_PIX_FMT_RGB332;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB444", format))
+  {
+    return V4L2_PIX_FMT_RGB444;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ARGB444", format))
+  {
+    return V4L2_PIX_FMT_ARGB444;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XRGB444", format))
+  {
+    return V4L2_PIX_FMT_XRGB444;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB555", format))
+  {
+    return V4L2_PIX_FMT_RGB555;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ARGB555", format))
+  {
+    return V4L2_PIX_FMT_ARGB555;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XRGB555", format))
+  {
+    return V4L2_PIX_FMT_XRGB555;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB565", format))
+  {
+    return V4L2_PIX_FMT_RGB565;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB555X", format))
+  {
+    return V4L2_PIX_FMT_RGB555X;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ARGB555X", format))
+  {
+    return V4L2_PIX_FMT_ARGB555X;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XRGB555X", format))
+  {
+    return V4L2_PIX_FMT_XRGB555X;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB565X", format))
+  {
+    return V4L2_PIX_FMT_RGB565X;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_BGR666", format))
+  {
+    return V4L2_PIX_FMT_BGR666;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_BGR24", format))
+  {
+    return V4L2_PIX_FMT_BGR24;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB24", format))
+  {
+    return V4L2_PIX_FMT_RGB24;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_BGR32", format))
+  {
+    return V4L2_PIX_FMT_BGR32;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ABGR32", format))
+  {
+    return V4L2_PIX_FMT_ABGR32;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XBGR32", format))
+  {
+    return V4L2_PIX_FMT_XBGR32;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB32", format))
+  {
+    return V4L2_PIX_FMT_RGB32;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ARGB32", format))
+  {
+    return V4L2_PIX_FMT_ARGB32;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XRGB32", format))
+  {
+    return V4L2_PIX_FMT_XRGB32;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_GREY", format))
+  {
+    return V4L2_PIX_FMT_GREY;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y4", format))
+  {
+    return V4L2_PIX_FMT_Y4;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y6", format))
+  {
+    return V4L2_PIX_FMT_Y6;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y10", format))
+  {
+    return V4L2_PIX_FMT_Y10;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y12", format))
+  {
+    return V4L2_PIX_FMT_Y12;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y16", format))
+  {
+    return V4L2_PIX_FMT_Y16;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y16_BE", format))
+  {
+    return V4L2_PIX_FMT_Y16_BE;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y10BPACK", format))
+  {
+    return V4L2_PIX_FMT_Y10BPACK;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_PAL8", format))
+  {
+    return V4L2_PIX_FMT_PAL8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_UV8", format))
+  {
+    return V4L2_PIX_FMT_UV8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUYV", format))
+  {
+    return V4L2_PIX_FMT_YUYV;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YYUV", format))
+  {
+    return V4L2_PIX_FMT_YYUV;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVYU", format))
+  {
+    return V4L2_PIX_FMT_YVYU;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_UYVY", format))
+  {
+    return V4L2_PIX_FMT_UYVY;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_VYUY", format))
+  {
+    return V4L2_PIX_FMT_VYUY;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y41P", format))
+  {
+    return V4L2_PIX_FMT_Y41P;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV444", format))
+  {
+    return V4L2_PIX_FMT_YUV444;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV555", format))
+  {
+    return V4L2_PIX_FMT_YUV555;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV565", format))
+  {
+    return V4L2_PIX_FMT_YUV565;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV32", format))
+  {
+    return V4L2_PIX_FMT_YUV32;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_HI240", format))
+  {
+    return V4L2_PIX_FMT_HI240;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_HM12", format))
+  {
+    return V4L2_PIX_FMT_HM12;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_M420", format))
+  {
+    return V4L2_PIX_FMT_M420;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV12", format))
+  {
+    return V4L2_PIX_FMT_NV12;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV21", format))
+  {
+    return V4L2_PIX_FMT_NV21;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV16", format))
+  {
+    return V4L2_PIX_FMT_NV16;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV61", format))
+  {
+    return V4L2_PIX_FMT_NV61;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV24", format))
+  {
+    return V4L2_PIX_FMT_NV24;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV42", format))
+  {
+    return V4L2_PIX_FMT_NV42;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV12M", format))
+  {
+    return V4L2_PIX_FMT_NV12M;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV21M", format))
+  {
+    return V4L2_PIX_FMT_NV21M;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV16M", format))
+  {
+    return V4L2_PIX_FMT_NV16M;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV61M", format))
+  {
+    return V4L2_PIX_FMT_NV61M;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV12MT", format))
+  {
+    return V4L2_PIX_FMT_NV12MT;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV12MT_16X16", format))
+  {
+    return V4L2_PIX_FMT_NV12MT_16X16;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV410", format))
+  {
+    return V4L2_PIX_FMT_YUV410;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVU410", format))
+  {
+    return V4L2_PIX_FMT_YVU410;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV411P", format))
+  {
+    return V4L2_PIX_FMT_YUV411P;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV420", format))
+  {
+    return V4L2_PIX_FMT_YUV420;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVU420", format))
+  {
+    return V4L2_PIX_FMT_YVU420;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV422P", format))
+  {
+    return V4L2_PIX_FMT_YUV422P;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV420M", format))
+  {
+    return V4L2_PIX_FMT_YUV420M;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVU420M", format))
+  {
+    return V4L2_PIX_FMT_YVU420M;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV422M", format))
+  {
+    return V4L2_PIX_FMT_YUV422M;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVU422M", format))
+  {
+    return V4L2_PIX_FMT_YVU422M;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV444M", format))
+  {
+    return V4L2_PIX_FMT_YUV444M;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVU444M", format))
+  {
+    return V4L2_PIX_FMT_YVU444M;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR8", format))
+  {
+    return V4L2_PIX_FMT_SBGGR8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG8", format))
+  {
+    return V4L2_PIX_FMT_SGBRG8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG8", format))
+  {
+    return V4L2_PIX_FMT_SGRBG8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB8", format))
+  {
+    return V4L2_PIX_FMT_SRGGB8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR10", format))
+  {
+    return V4L2_PIX_FMT_SBGGR10;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG10", format))
+  {
+    return V4L2_PIX_FMT_SGBRG10;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG10", format))
+  {
+    return V4L2_PIX_FMT_SGRBG10;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB10", format))
+  {
+    return V4L2_PIX_FMT_SRGGB10;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR10P", format))
+  {
+    return V4L2_PIX_FMT_SBGGR10P;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG10P", format))
+  {
+    return V4L2_PIX_FMT_SGBRG10P;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG10P", format))
+  {
+    return V4L2_PIX_FMT_SGRBG10P;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB10P", format))
+  {
+    return V4L2_PIX_FMT_SRGGB10P;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR10ALAW8", format))
+  {
+    return V4L2_PIX_FMT_SBGGR10ALAW8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG10ALAW8", format))
+  {
+    return V4L2_PIX_FMT_SGBRG10ALAW8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG10ALAW8", format))
+  {
+    return V4L2_PIX_FMT_SGRBG10ALAW8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB10ALAW8", format))
+  {
+    return V4L2_PIX_FMT_SRGGB10ALAW8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR10DPCM8", format))
+  {
+    return V4L2_PIX_FMT_SBGGR10DPCM8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG10DPCM8", format))
+  {
+    return V4L2_PIX_FMT_SGBRG10DPCM8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG10DPCM8", format))
+  {
+    return V4L2_PIX_FMT_SGRBG10DPCM8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB10DPCM8", format))
+  {
+    return V4L2_PIX_FMT_SRGGB10DPCM8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR12", format))
+  {
+    return V4L2_PIX_FMT_SBGGR12;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG12", format))
+  {
+    return V4L2_PIX_FMT_SGBRG12;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG12", format))
+  {
+    return V4L2_PIX_FMT_SGRBG12;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB12", format))
+  {
+    return V4L2_PIX_FMT_SRGGB12;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR12P", format))
+  {
+    return V4L2_PIX_FMT_SBGGR12P;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG12P", format))
+  {
+    return V4L2_PIX_FMT_SGBRG12P;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG12P", format))
+  {
+    return V4L2_PIX_FMT_SGRBG12P;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB12P", format))
+  {
+    return V4L2_PIX_FMT_SRGGB12P;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR16", format))
+  {
+    return V4L2_PIX_FMT_SBGGR16;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG16", format))
+  {
+    return V4L2_PIX_FMT_SGBRG16;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG16", format))
+  {
+    return V4L2_PIX_FMT_SGRBG16;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB16", format))
+  {
+    return V4L2_PIX_FMT_SRGGB16;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_HSV24", format))
+  {
+    return V4L2_PIX_FMT_HSV24;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_HSV32", format))
+  {
+    return V4L2_PIX_FMT_HSV32;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MJPEG", format))
+  {
+    return V4L2_PIX_FMT_MJPEG;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_JPEG", format))
+  {
+    return V4L2_PIX_FMT_JPEG;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_DV", format))
+  {
+    return V4L2_PIX_FMT_DV;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MPEG", format))
+  {
+    return V4L2_PIX_FMT_MPEG;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_H264", format))
+  {
+    return V4L2_PIX_FMT_H264;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_H264_NO_SC", format))
+  {
+    return V4L2_PIX_FMT_H264_NO_SC;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_H264_MVC", format))
+  {
+    return V4L2_PIX_FMT_H264_MVC;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_H263", format))
+  {
+    return V4L2_PIX_FMT_H263;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MPEG1", format))
+  {
+    return V4L2_PIX_FMT_MPEG1;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MPEG2", format))
+  {
+    return V4L2_PIX_FMT_MPEG2;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MPEG4", format))
+  {
+    return V4L2_PIX_FMT_MPEG4;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XVID", format))
+  {
+    return V4L2_PIX_FMT_XVID;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_VC1_ANNEX_G", format))
+  {
+    return V4L2_PIX_FMT_VC1_ANNEX_G;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_VC1_ANNEX_L", format))
+  {
+    return V4L2_PIX_FMT_VC1_ANNEX_L;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_VP8", format))
+  {
+    return V4L2_PIX_FMT_VP8;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_VP9", format))
+  {
+    return V4L2_PIX_FMT_VP9;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_CPIA1", format))
+  {
+    return V4L2_PIX_FMT_CPIA1;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_WNVA", format))
+  {
+    return V4L2_PIX_FMT_WNVA;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SN9C10X", format))
+  {
+    return V4L2_PIX_FMT_SN9C10X;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SN9C20X_I420", format))
+  {
+    return V4L2_PIX_FMT_SN9C20X_I420;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_PWC1", format))
+  {
+    return V4L2_PIX_FMT_PWC1;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_PWC2", format))
+  {
+    return V4L2_PIX_FMT_PWC2;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ET61X251", format))
+  {
+    return V4L2_PIX_FMT_ET61X251;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SPCA501", format))
+  {
+    return V4L2_PIX_FMT_SPCA501;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SPCA505", format))
+  {
+    return V4L2_PIX_FMT_SPCA505;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SPCA508", format))
+  {
+    return V4L2_PIX_FMT_SPCA508;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SPCA561", format))
+  {
+    return V4L2_PIX_FMT_SPCA561;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_PAC207", format))
+  {
+    return V4L2_PIX_FMT_PAC207;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MR97310A", format))
+  {
+    return V4L2_PIX_FMT_MR97310A;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_JL2005BCD", format))
+  {
+    return V4L2_PIX_FMT_JL2005BCD;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SN9C2028", format))
+  {
+    return V4L2_PIX_FMT_SN9C2028;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SQ905C", format))
+  {
+    return V4L2_PIX_FMT_SQ905C;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_PJPG", format))
+  {
+    return V4L2_PIX_FMT_PJPG;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_OV511", format))
+  {
+    return V4L2_PIX_FMT_OV511;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_OV518", format))
+  {
+    return V4L2_PIX_FMT_OV518;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_STV0680", format))
+  {
+    return V4L2_PIX_FMT_STV0680;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_TM6000", format))
+  {
+    return V4L2_PIX_FMT_TM6000;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_CIT_YYVYUY", format))
+  {
+    return V4L2_PIX_FMT_CIT_YYVYUY;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_KONICA420", format))
+  {
+    return V4L2_PIX_FMT_KONICA420;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_JPGL", format))
+  {
+    return V4L2_PIX_FMT_JPGL;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SE401", format))
+  {
+    return V4L2_PIX_FMT_SE401;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_S5C_UYVY_JPG", format))
+  {
+    return V4L2_PIX_FMT_S5C_UYVY_JPG;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y8I", format))
+  {
+    return V4L2_PIX_FMT_Y8I;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y12I", format))
+  {
+    return V4L2_PIX_FMT_Y12I;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Z16", format))
+  {
+    return V4L2_PIX_FMT_Z16;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MT21C", format))
+  {
+    return V4L2_PIX_FMT_MT21C;
+  }
+  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_INZI", format))
+  {
+    return V4L2_PIX_FMT_INZI;
+  }
+  else
+  {
+    return v4l2_fourcc('x', 'x', 'x', 'x');
   }
 }
