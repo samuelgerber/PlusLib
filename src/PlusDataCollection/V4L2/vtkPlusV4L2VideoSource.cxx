@@ -55,7 +55,11 @@ vtkPlusV4L2VideoSource::vtkPlusV4L2VideoSource()
   , FileDescriptor(-1)
   , Frames(nullptr)
   , BufferCount(0)
-  , RequestedFormat(std::make_shared<v4l2_format>())
+  , DeviceFormat(std::make_shared<v4l2_format>())
+  , FormatWidth(nullptr)
+  , FormatHeight(nullptr)
+  , PixelFormat(nullptr)
+  , FieldOrder(nullptr)
 {
 
 }
@@ -110,26 +114,33 @@ PlusStatus vtkPlusV4L2VideoSource::ReadConfiguration(vtkXMLDataElement* rootConf
     LOG_WARNING("Unknown method: " << ioMethod << ". Defaulting to " << vtkPlusV4L2VideoSource::IOMethodToString(this->IOMethod));
   }
 
-  int frameSize[3];
-  XML_READ_VECTOR_ATTRIBUTE_NONMEMBER_OPTIONAL(int, 3, FrameSize, frameSize, deviceConfig);
+  int frameSize[2];
+  XML_READ_VECTOR_ATTRIBUTE_NONMEMBER_OPTIONAL(int, 2, FrameSize, frameSize, deviceConfig);
   if (deviceConfig->GetAttribute("FrameSize") != nullptr)
   {
-    this->RequestedFormat->fmt.pix.width = frameSize[0];
-    this->RequestedFormat->fmt.pix.height = frameSize[1];
+    if (frameSize[0] < 0 || frameSize[1] < 0)
+    {
+      LOG_WARNING("Invalid frame size in configuration file. Not setting parameters to device.");
+    }
+    else
+    {
+      this->FormatHeight = std::make_shared<unsigned int>(static_cast<unsigned int>(frameSize[0]));
+      this->FormatWidth = std::make_shared<unsigned int>(static_cast<unsigned int>(frameSize[1]));
+    }
   }
 
   std::string pixelFormat;
   XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL("PixelFormat", pixelFormat, deviceConfig);
   if (deviceConfig->GetAttribute("PixelFormat") != nullptr)
   {
-    this->RequestedFormat->fmt.pix.pixelformat = vtkPlusV4L2VideoSource::StringToFormat(pixelFormat);
+    this->PixelFormat = std::make_shared<unsigned int>(vtkPlusV4L2VideoSource::StringToPixelFormat(pixelFormat));
   }
 
   std::string fieldOrder;
   XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL("FieldOrder", fieldOrder, deviceConfig);
   if (deviceConfig->GetAttribute("FieldOrder") != nullptr)
   {
-    this->RequestedFormat->fmt.pix.field = vtkPlusV4L2VideoSource::StringToFieldOrder(fieldOrder);
+    this->PixelFormat = std::make_shared<v4l2_field>(vtkPlusV4L2VideoSource::StringToFieldOrder(fieldOrder));
   }
 
   return PLUS_SUCCESS;
@@ -141,7 +152,15 @@ PlusStatus vtkPlusV4L2VideoSource::WriteConfiguration(vtkXMLDataElement* rootCon
   XML_FIND_DEVICE_ELEMENT_REQUIRED_FOR_WRITING(deviceConfig, rootConfigElement);
 
   XML_WRITE_STRING_ATTRIBUTE_IF_NOT_EMPTY(DeviceName, deviceConfig);
+
   deviceConfig->SetAttribute("IOMethod", vtkPlusV4L2VideoSource::IOMethodToString(this->IOMethod).c_str());
+
+  int frameSize[2] = { static_cast<int>(this->DeviceFormat->fmt.pix.width), static_cast<int>(this->DeviceFormat->fmt.pix.height) };
+  deviceConfig->SetVectorAttribute("FrameSize", 2, frameSize);
+
+  deviceConfig->SetAttribute("PixelFormat", vtkPlusV4L2VideoSource::PixelFormatToString(this->DeviceFormat->fmt.pix.pixelformat));
+
+  deviceConfig->SetAttribute("FieldOrder", vtkPlusV4L2VideoSource::FieldOrderToString(this->DeviceFormat->fmt.pix.field));
 
   return PLUS_SUCCESS;
 }
@@ -188,7 +207,7 @@ PlusStatus vtkPlusV4L2VideoSource::InitMmap()
     }
     else
     {
-      LOG_ERROR("VIDIOC_REQBUFS" << ": " << errno << ", " << strerror(errno));
+      LOG_ERROR("VIDIOC_REQBUFS" << ": " << strerror(errno));
     }
     return PLUS_FAIL;
   }
@@ -218,7 +237,7 @@ PlusStatus vtkPlusV4L2VideoSource::InitMmap()
 
     if (-1 == xioctl(this->FileDescriptor, VIDIOC_QUERYBUF, &buf))
     {
-      LOG_ERROR("VIDIOC_QUERYBUF" << ": " << errno << ", " << strerror(errno));
+      LOG_ERROR("VIDIOC_QUERYBUF" << ": " << strerror(errno));
       return PLUS_FAIL;
     }
 
@@ -227,7 +246,7 @@ PlusStatus vtkPlusV4L2VideoSource::InitMmap()
 
     if (MAP_FAILED == this->Frames[this->BufferCount].start)
     {
-      LOG_ERROR("mmap" << ": " << errno << ", " << strerror(errno));
+      LOG_ERROR("mmap" << ": " << strerror(errno));
     }
   }
 
@@ -253,7 +272,7 @@ PlusStatus vtkPlusV4L2VideoSource::InitUserp(unsigned int bufferSize)
     }
     else
     {
-      LOG_ERROR("VIDIOC_REQBUFS" << ": " << errno << ", " << strerror(errno));
+      LOG_ERROR("VIDIOC_REQBUFS" << ": " << strerror(errno));
     }
     return PLUS_FAIL;
   }
@@ -284,26 +303,24 @@ PlusStatus vtkPlusV4L2VideoSource::InitUserp(unsigned int bufferSize)
 //----------------------------------------------------------------------------
 PlusStatus vtkPlusV4L2VideoSource::InternalConnect()
 {
-  // Open the device
+  // Ensure we can detect the device in the OS
   struct stat st;
-
   if (-1 == stat(this->DeviceName.c_str(), &st))
   {
-    LOG_ERROR("Cannot identify " << this->DeviceName << ": " << errno << ", " << strerror(errno));
+    LOG_ERROR("Cannot identify " << this->DeviceName << ": " << strerror(errno));
     return PLUS_FAIL;
   }
-
   if (!S_ISCHR(st.st_mode))
   {
     LOG_ERROR(this->DeviceName << " is not a valid device.");
     return PLUS_FAIL;
   }
 
+  // Open the device
   this->FileDescriptor = open(this->DeviceName.c_str(), O_RDWR | O_NONBLOCK, 0);
-
   if (-1 == this->FileDescriptor)
   {
-    LOG_ERROR("Cannot open " << this->DeviceName << ": " << errno << ", " << strerror(errno));
+    LOG_ERROR("Cannot open " << this->DeviceName << ": " << strerror(errno));
     return PLUS_FAIL;
   }
 
@@ -317,7 +334,7 @@ PlusStatus vtkPlusV4L2VideoSource::InternalConnect()
     }
     else
     {
-      LOG_ERROR("VIDIOC_QUERYCAP" << ": " << errno << ", " << strerror(errno));
+      LOG_ERROR("VIDIOC_QUERYCAP" << ": " << strerror(errno));
     }
     return PLUS_FAIL;
   }
@@ -329,34 +346,42 @@ PlusStatus vtkPlusV4L2VideoSource::InternalConnect()
   }
 
 #if defined(_DEBUG)
+  // Does while loop work?
   this->PrintSelf(std::cout, vtkIndent());
 #endif
 
   switch (this->IOMethod)
   {
     case IO_METHOD_READ:
+    {
       if (!(cap.capabilities & V4L2_CAP_READWRITE))
       {
         LOG_ERROR(this->DeviceName << " does not support read i/o");
         return PLUS_FAIL;
       }
       break;
-
+    }
     case IO_METHOD_MMAP:
     case IO_METHOD_USERPTR:
+    {
       if (!(cap.capabilities & V4L2_CAP_STREAMING))
       {
         LOG_ERROR(this->DeviceName << " does not support streaming i/o");
         return PLUS_FAIL;
       }
       break;
+    }
+    default:
+    {
+      LOG_ERROR("Unknown IO method.");
+      return PLUS_FAIL;
+    }
   }
 
   // Select video input, video standard and tune here
   v4l2_cropcap cropcap;
   CLEAR(cropcap);
   cropcap.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-
   if (0 == xioctl(this->FileDescriptor, VIDIOC_CROPCAP, &cropcap))
   {
     v4l2_crop crop;
@@ -370,36 +395,52 @@ PlusStatus vtkPlusV4L2VideoSource::InternalConnect()
       switch (errno)
       {
         case EINVAL:
-          /* Cropping not supported. */
+          // Cropping not supported
           break;
       }
     }
   }
 
   // Retrieve current v4l2 format settings
-  if (-1 == xioctl(this->FileDescriptor, VIDIOC_G_FMT, this->RequestedFormat.get()))
+  if (-1 == xioctl(this->FileDescriptor, VIDIOC_G_FMT, this->DeviceFormat.get()))
   {
-    LOG_ERROR("VIDIOC_G_FMT" << ": " << errno << ", " << strerror(errno));
+    LOG_ERROR("VIDIOC_G_FMT" << ": " << strerror(errno));
     return PLUS_FAIL;
   }
 
-  // TODO: set from configuration
-  this->RequestedFormat->fmt.pix.width = 640;
-  this->RequestedFormat->fmt.pix.height = 480;
-  this->RequestedFormat->fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
-  this->RequestedFormat->fmt.pix.field = V4L2_FIELD_INTERLACED;
-
-  if (-1 == xioctl(this->FileDescriptor, VIDIOC_S_FMT, this->RequestedFormat.get()))
+  if (this->FormatWidth != nullptr)
   {
-    LOG_ERROR("VIDIOC_S_FMT" << ": " << errno << ", " << strerror(errno));
-    return PLUS_FAIL;
+    this->DeviceFormat->fmt.pix.width = *this->FormatWidth;
+  }
+  if (this->FormatHeight != nullptr)
+  {
+    this->DeviceFormat->fmt.pix.height = *this->FormatHeight;
+  }
+  if (this->PixelFormat != nullptr)
+  {
+    this->DeviceFormat->fmt.pix.pixelformat = *this->PixelFormat;
+  }
+  if (this->FieldOrder != nullptr)
+  {
+    this->DeviceFormat->fmt.pix.field = *this->FieldOrder;
   }
 
+  if (-1 == xioctl(this->FileDescriptor, VIDIOC_S_FMT, this->DeviceFormat.get()))
+  {
+    LOG_WARNING("Unable to set requested video format. Continuing with existing format: " << strerror(errno));
+    if (-1 == xioctl(this->FileDescriptor, VIDIOC_G_FMT, this->DeviceFormat.get()))
+    {
+      LOG_ERROR("VIDIOC_G_FMT" << ": " << strerror(errno));
+      return PLUS_FAIL;
+    }
+  }
+
+  // Use this->DeviceFormat to initialize data source
   switch (this->IOMethod)
   {
     case IO_METHOD_READ:
     {
-      return this->InitRead(this->RequestedFormat->fmt.pix.sizeimage);
+      return this->InitRead(this->DeviceFormat->fmt.pix.sizeimage);
     }
     case IO_METHOD_MMAP:
     {
@@ -407,10 +448,12 @@ PlusStatus vtkPlusV4L2VideoSource::InternalConnect()
     }
     case IO_METHOD_USERPTR:
     {
-      return this->InitUserp(this->RequestedFormat->fmt.pix.sizeimage);
+      return this->InitUserp(this->DeviceFormat->fmt.pix.sizeimage);
     }
     default:
+    {
       return PLUS_FAIL;
+    }
   }
 }
 
@@ -430,7 +473,7 @@ PlusStatus vtkPlusV4L2VideoSource::InternalDisconnect()
       {
         if (-1 == munmap(this->Frames[i].start, this->Frames[i].length))
         {
-          LOG_ERROR("munmap" << ": " << errno << ", " << strerror(errno));
+          LOG_ERROR("munmap" << ": " << strerror(errno));
           return PLUS_FAIL;
         }
       }
@@ -450,10 +493,11 @@ PlusStatus vtkPlusV4L2VideoSource::InternalDisconnect()
 
   if (-1 == close(this->FileDescriptor))
   {
-    LOG_ERROR("Close" << ": " << errno << ", " << strerror(errno));
+    LOG_ERROR("Close" << ": " << strerror(errno));
     return PLUS_FAIL;
   }
 
+  this->BufferCount = 0;
   this->FileDescriptor = -1;
 
   return PLUS_SUCCESS;
@@ -477,7 +521,7 @@ PlusStatus vtkPlusV4L2VideoSource::InternalUpdate()
 
   if (-1 == r)
   {
-    LOG_ERROR("Unable to select video device" << ": " << errno << ", " << strerror(errno));
+    LOG_ERROR("Unable to select video device" << ": " << strerror(errno));
     return PLUS_FAIL;
   }
 
@@ -500,109 +544,130 @@ PlusStatus vtkPlusV4L2VideoSource::InternalUpdate()
 //----------------------------------------------------------------------------
 PlusStatus vtkPlusV4L2VideoSource::ReadFrame()
 {
-  v4l2_buffer buf;
-
   switch (this->IOMethod)
   {
     case IO_METHOD_READ:
     {
-      if (-1 == read(this->FileDescriptor, this->Frames[0].start, this->Frames[0].length))
-      {
-        switch (errno)
-        {
-          case EAGAIN:
-          {
-            return PLUS_FAIL;
-          }
-          case EIO:
-          {
-            // Could ignore EIO, see spec
-          }
-          default:
-          {
-            LOG_ERROR("Read" << ": " << errno << ", " << strerror(errno));
-            return PLUS_FAIL;
-          }
-        }
-      }
-      break;
+      return ReadFrameFD();
     }
     case IO_METHOD_MMAP:
     {
-      CLEAR(buf);
-
-      buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-      buf.memory = V4L2_MEMORY_MMAP;
-
-      if (-1 == xioctl(this->FileDescriptor, VIDIOC_DQBUF, &buf))
-      {
-        switch (errno)
-        {
-          case EAGAIN:
-          {
-            return PLUS_FAIL;
-          }
-          case EIO:
-          {
-            // Could ignore EIO, see spec
-          }
-          default:
-          {
-            LOG_ERROR("VIDIOC_DQBUF" << ": " << errno << ", " << strerror(errno));
-            return PLUS_FAIL;
-          }
-        }
-      }
-
-      if (-1 == xioctl(this->FileDescriptor, VIDIOC_QBUF, &buf))
-      {
-        LOG_ERROR("VIDIOC_QBUF" << ": " << errno << ", " << strerror(errno));
-        return PLUS_FAIL;
-      }
-      break;
+      return ReadFrameMMAP();
     }
     case IO_METHOD_USERPTR:
     {
-      CLEAR(buf);
+      return ReadFrameUserPtr();
+    }
+  }
 
-      buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-      buf.memory = V4L2_MEMORY_USERPTR;
+  return PLUS_FAIL;
+}
 
-      if (-1 == xioctl(this->FileDescriptor, VIDIOC_DQBUF, &buf))
+//----------------------------------------------------------------------------
+PlusStatus vtkPlusV4L2VideoSource::ReadFrameFD()
+{
+  if (-1 == read(this->FileDescriptor, this->Frames[0].start, this->Frames[0].length))
+  {
+    switch (errno)
+    {
+      case EAGAIN:
       {
-        switch (errno)
-        {
-          case EAGAIN:
-          {
-            return PLUS_FAIL;
-          }
-          case EIO:
-          {
-            // Could ignore EIO, see spec
-          }
-          default:
-          {
-            LOG_ERROR("VIDIOC_DQBUF" << ": " << errno << ", " << strerror(errno));
-            return PLUS_FAIL;
-          }
-        }
-      }
-
-      for (unsigned int i = 0; i < this->BufferCount; ++i)
-      {
-        if (buf.m.userptr == (unsigned long) this->Frames[i].start && buf.length == this->Frames[i].length)
-        {
-          break;
-        }
-      }
-
-      if (-1 == xioctl(this->FileDescriptor, VIDIOC_QBUF, &buf))
-      {
-        LOG_ERROR("VIDIOC_QBUF" << ": " << errno << ", " << strerror(errno));
         return PLUS_FAIL;
       }
+      case EIO:
+      {
+        // Could ignore EIO, see spec
+      }
+      default:
+      {
+        LOG_ERROR("Read" << ": " << strerror(errno));
+        return PLUS_FAIL;
+      }
+    }
+  }
+
+  return PLUS_SUCCESS;
+}
+
+//----------------------------------------------------------------------------
+PlusStatus vtkPlusV4L2VideoSource::ReadFrameMMAP()
+{
+  v4l2_buffer buf;
+  CLEAR(buf);
+
+  buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  buf.memory = V4L2_MEMORY_MMAP;
+
+  if (-1 == xioctl(this->FileDescriptor, VIDIOC_DQBUF, &buf))
+  {
+    switch (errno)
+    {
+      case EAGAIN:
+      {
+        return PLUS_FAIL;
+      }
+      case EIO:
+      {
+        // Could ignore EIO, see spec
+      }
+      default:
+      {
+        LOG_ERROR("VIDIOC_DQBUF" << ": " << strerror(errno));
+        return PLUS_FAIL;
+      }
+    }
+  }
+
+  if (-1 == xioctl(this->FileDescriptor, VIDIOC_QBUF, &buf))
+  {
+    LOG_ERROR("VIDIOC_QBUF" << ": " << strerror(errno));
+    return PLUS_FAIL;
+  }
+
+  return PLUS_SUCCESS;
+}
+
+//----------------------------------------------------------------------------
+PlusStatus vtkPlusV4L2VideoSource::ReadFrameUserPtr()
+{
+  v4l2_buffer buf;
+  CLEAR(buf);
+
+  buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  buf.memory = V4L2_MEMORY_USERPTR;
+
+  if (-1 == xioctl(this->FileDescriptor, VIDIOC_DQBUF, &buf))
+  {
+    switch (errno)
+    {
+      case EAGAIN:
+      {
+        return PLUS_FAIL;
+      }
+      case EIO:
+      {
+        // Could ignore EIO, see spec
+      }
+      default:
+      {
+        LOG_ERROR("VIDIOC_DQBUF" << ": " << strerror(errno));
+        return PLUS_FAIL;
+      }
+    }
+  }
+
+  for (unsigned int i = 0; i < this->BufferCount; ++i)
+  {
+    if (buf.m.userptr == (unsigned long) this->Frames[i].start && buf.length == this->Frames[i].length)
+    {
       break;
     }
+  }
+
+  if (-1 == xioctl(this->FileDescriptor, VIDIOC_QBUF, &buf))
+  {
+    LOG_ERROR("VIDIOC_QBUF" << ": " << strerror(errno));
+    return PLUS_FAIL;
   }
 
   return PLUS_SUCCESS;
@@ -639,7 +704,7 @@ PlusStatus vtkPlusV4L2VideoSource::InternalStopRecording()
       type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
       if (-1 == xioctl(this->FileDescriptor, VIDIOC_STREAMOFF, &type))
       {
-        LOG_ERROR("VIDIOC_STREAMOFF" << ": " << errno << ", " << strerror(errno));
+        LOG_ERROR("VIDIOC_STREAMOFF" << ": " << strerror(errno));
         break;
       }
     }
@@ -655,11 +720,6 @@ PlusStatus vtkPlusV4L2VideoSource::InternalStartRecording()
 
   switch (this->IOMethod)
   {
-    case IO_METHOD_READ:
-    {
-      // Nothing to do
-      break;
-    }
     case IO_METHOD_MMAP:
     {
       for (unsigned int i = 0; i < this->BufferCount; ++i)
@@ -672,14 +732,14 @@ PlusStatus vtkPlusV4L2VideoSource::InternalStartRecording()
 
         if (-1 == xioctl(this->FileDescriptor, VIDIOC_QBUF, &buf))
         {
-          LOG_ERROR("VIDIOC_QBUF" << ": " << errno << ", " << strerror(errno));
+          LOG_ERROR("VIDIOC_QBUF" << ": " << strerror(errno));
           return PLUS_FAIL;
         }
       }
       type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
       if (-1 == xioctl(this->FileDescriptor, VIDIOC_STREAMON, &type))
       {
-        LOG_ERROR("VIDIOC_STREAMON" << ": " << errno << ", " << strerror(errno));
+        LOG_ERROR("VIDIOC_STREAMON" << ": " << strerror(errno));
         return PLUS_FAIL;
       }
       break;
@@ -698,18 +758,20 @@ PlusStatus vtkPlusV4L2VideoSource::InternalStartRecording()
 
         if (-1 == xioctl(this->FileDescriptor, VIDIOC_QBUF, &buf))
         {
-          LOG_ERROR("VIDIOC_QBUF" << ": " << errno << ", " << strerror(errno));
+          LOG_ERROR("VIDIOC_QBUF" << ": " << strerror(errno));
           return PLUS_FAIL;
         }
       }
       type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
       if (-1 == xioctl(this->FileDescriptor, VIDIOC_STREAMON, &type))
       {
-        LOG_ERROR("VIDIOC_STREAMON" << ": " << errno << ", " << strerror(errno));
+        LOG_ERROR("VIDIOC_STREAMON" << ": " << strerror(errno));
         return PLUS_FAIL;
       }
       break;
     }
+    default:
+    {}
   }
 
   return PLUS_SUCCESS;
@@ -753,1315 +815,359 @@ vtkPlusV4L2VideoSource::V4L2_IO_METHOD vtkPlusV4L2VideoSource::StringToIOMethod(
 }
 
 //----------------------------------------------------------------------------
-std::string vtkPlusV4L2VideoSource::FormatToString(v4l2_pix_format format)
+#define PIXEL_FORMAT_CASE(format) case format: return #format
+std::string vtkPlusV4L2VideoSource::PixelFormatToString(unsigned int pixelFormat)
 {
-  switch (format)
+  switch (pixelFormat)
   {
-    case V4L2_PIX_FMT_RGB332:
-    {
-      return "V4L2_PIX_FMT_RGB332";
-    }
-    case V4L2_PIX_FMT_RGB444:
-    {
-      return "V4L2_PIX_FMT_RGB444";
-    }
-    case V4L2_PIX_FMT_ARGB444:
-    {
-      return "V4L2_PIX_FMT_ARGB444";
-    }
-    case V4L2_PIX_FMT_XRGB444:
-    {
-      return "V4L2_PIX_FMT_XRGB444";
-    }
-    case V4L2_PIX_FMT_RGB555:
-    {
-      return "V4L2_PIX_FMT_RGB555";
-    }
-    case V4L2_PIX_FMT_ARGB555:
-    {
-      return "V4L2_PIX_FMT_ARGB555";
-    }
-    case V4L2_PIX_FMT_XRGB555:
-    {
-      return "V4L2_PIX_FMT_XRGB555";
-    }
-    case V4L2_PIX_FMT_RGB565:
-    {
-      return "V4L2_PIX_FMT_RGB565";
-    }
-    case V4L2_PIX_FMT_RGB555X:
-    {
-      return "V4L2_PIX_FMT_RGB555X";
-    }
-    case V4L2_PIX_FMT_ARGB555X:
-    {
-      return "V4L2_PIX_FMT_ARGB555X";
-    }
-    case V4L2_PIX_FMT_XRGB555X:
-    {
-      return "V4L2_PIX_FMT_XRGB555X";
-    }
-    case V4L2_PIX_FMT_RGB565X:
-    {
-      return "V4L2_PIX_FMT_RGB565X";
-    }
-    case V4L2_PIX_FMT_BGR666:
-    {
-      return "V4L2_PIX_FMT_BGR666";
-    }
-    case V4L2_PIX_FMT_BGR24:
-    {
-      return "V4L2_PIX_FMT_BGR24";
-    }
-    case V4L2_PIX_FMT_RGB24:
-    {
-      return "V4L2_PIX_FMT_RGB24";
-    }
-    case V4L2_PIX_FMT_BGR32:
-    {
-      return "V4L2_PIX_FMT_BGR32";
-    }
-    case V4L2_PIX_FMT_ABGR32:
-    {
-      return "V4L2_PIX_FMT_ABGR32";
-    }
-    case V4L2_PIX_FMT_XBGR32:
-    {
-      return "V4L2_PIX_FMT_XBGR32";
-    }
-    case V4L2_PIX_FMT_RGB32:
-    {
-      return "V4L2_PIX_FMT_RGB32";
-    }
-    case V4L2_PIX_FMT_ARGB32:
-    {
-      return "V4L2_PIX_FMT_ARGB32";
-    }
-    case V4L2_PIX_FMT_XRGB32:
-    {
-      return "V4L2_PIX_FMT_XRGB32";
-    }
-    case V4L2_PIX_FMT_GREY:
-    {
-      return "V4L2_PIX_FMT_GREY";
-    }
-    case V4L2_PIX_FMT_Y4:
-    {
-      return "V4L2_PIX_FMT_Y4";
-    }
-    case V4L2_PIX_FMT_Y6:
-    {
-      return "V4L2_PIX_FMT_Y6";
-    }
-    case V4L2_PIX_FMT_Y10:
-    {
-      return "V4L2_PIX_FMT_Y10";
-    }
-    case V4L2_PIX_FMT_Y12:
-    {
-      return "V4L2_PIX_FMT_Y12";
-    }
-    case V4L2_PIX_FMT_Y16:
-    {
-      return "V4L2_PIX_FMT_Y16";
-    }
-    case V4L2_PIX_FMT_Y16_BE:
-    {
-      return "V4L2_PIX_FMT_Y16_BE";
-    }
-    case V4L2_PIX_FMT_Y10BPACK:
-    {
-      return "V4L2_PIX_FMT_Y10BPACK";
-    }
-    case V4L2_PIX_FMT_PAL8:
-    {
-      return "V4L2_PIX_FMT_PAL8";
-    }
-    case V4L2_PIX_FMT_UV8:
-    {
-      return "V4L2_PIX_FMT_UV8";
-    }
-    case V4L2_PIX_FMT_YUYV:
-    {
-      return "V4L2_PIX_FMT_YUYV";
-    }
-    case V4L2_PIX_FMT_YYUV:
-    {
-      return "V4L2_PIX_FMT_YYUV";
-    }
-    case V4L2_PIX_FMT_YVYU:
-    {
-      return "V4L2_PIX_FMT_YVYU";
-    }
-    case V4L2_PIX_FMT_UYVY:
-    {
-      return "V4L2_PIX_FMT_UYVY";
-    }
-    case V4L2_PIX_FMT_VYUY:
-    {
-      return "V4L2_PIX_FMT_VYUY";
-    }
-    case V4L2_PIX_FMT_Y41P:
-    {
-      return "V4L2_PIX_FMT_Y41P";
-    }
-    case V4L2_PIX_FMT_YUV444:
-    {
-      return "V4L2_PIX_FMT_YUV444";
-    }
-    case V4L2_PIX_FMT_YUV555:
-    {
-      return "V4L2_PIX_FMT_YUV555";
-    }
-    case V4L2_PIX_FMT_YUV565:
-    {
-      return "V4L2_PIX_FMT_YUV565";
-    }
-    case V4L2_PIX_FMT_YUV32:
-    {
-      return "V4L2_PIX_FMT_YUV32";
-    }
-    case V4L2_PIX_FMT_HI240:
-    {
-      return "V4L2_PIX_FMT_HI240";
-    }
-    case V4L2_PIX_FMT_HM12:
-    {
-      return "V4L2_PIX_FMT_HM12";
-    }
-    case V4L2_PIX_FMT_M420:
-    {
-      return "V4L2_PIX_FMT_M420";
-    }
-    case V4L2_PIX_FMT_NV12:
-    {
-      return "V4L2_PIX_FMT_NV12";
-    }
-    case V4L2_PIX_FMT_NV21:
-    {
-      return "V4L2_PIX_FMT_NV21";
-    }
-    case V4L2_PIX_FMT_NV16:
-    {
-      return "V4L2_PIX_FMT_NV16";
-    }
-    case V4L2_PIX_FMT_NV61:
-    {
-      return "V4L2_PIX_FMT_NV61";
-    }
-    case V4L2_PIX_FMT_NV24:
-    {
-      return "V4L2_PIX_FMT_NV24";
-    }
-    case V4L2_PIX_FMT_NV42:
-    {
-      return "V4L2_PIX_FMT_NV42";
-    }
-    case V4L2_PIX_FMT_NV12M:
-    {
-      return "V4L2_PIX_FMT_NV12M";
-    }
-    case V4L2_PIX_FMT_NV21M:
-    {
-      return "V4L2_PIX_FMT_NV21M";
-    }
-    case V4L2_PIX_FMT_NV16M:
-    {
-      return "V4L2_PIX_FMT_NV16M";
-    }
-    case V4L2_PIX_FMT_NV61M:
-    {
-      return "V4L2_PIX_FMT_NV61M";
-    }
-    case V4L2_PIX_FMT_NV12MT:
-    {
-      return "V4L2_PIX_FMT_NV12MT";
-    }
-    case V4L2_PIX_FMT_NV12MT_16X16:
-    {
-      return "V4L2_PIX_FMT_NV12MT_16X16";
-    }
-    case V4L2_PIX_FMT_YUV410:
-    {
-      return "V4L2_PIX_FMT_YUV410";
-    }
-    case V4L2_PIX_FMT_YVU410:
-    {
-      return "V4L2_PIX_FMT_YVU410";
-    }
-    case V4L2_PIX_FMT_YUV411P:
-    {
-      return "V4L2_PIX_FMT_YUV411P";
-    }
-    case V4L2_PIX_FMT_YUV420:
-    {
-      return "V4L2_PIX_FMT_YUV420";
-    }
-    case V4L2_PIX_FMT_YVU420:
-    {
-      return "V4L2_PIX_FMT_YVU420";
-    }
-    case V4L2_PIX_FMT_YUV422P:
-    {
-      return "V4L2_PIX_FMT_YUV422P";
-    }
-    case V4L2_PIX_FMT_YUV420M:
-    {
-      return "V4L2_PIX_FMT_YUV420M";
-    }
-    case V4L2_PIX_FMT_YVU420M:
-    {
-      return "V4L2_PIX_FMT_YVU420M";
-    }
-    case V4L2_PIX_FMT_YUV422M:
-    {
-      return "V4L2_PIX_FMT_YUV422M";
-    }
-    case V4L2_PIX_FMT_YVU422M:
-    {
-      return "V4L2_PIX_FMT_YVU422M";
-    }
-    case V4L2_PIX_FMT_YUV444M:
-    {
-      return "V4L2_PIX_FMT_YUV444M";
-    }
-    case V4L2_PIX_FMT_YVU444M:
-    {
-      return "V4L2_PIX_FMT_YVU444M";
-    }
-    case V4L2_PIX_FMT_SBGGR8:
-    {
-      return "V4L2_PIX_FMT_SBGGR8";
-    }
-    case V4L2_PIX_FMT_SGBRG8:
-    {
-      return "V4L2_PIX_FMT_SGBRG8";
-    }
-    case V4L2_PIX_FMT_SGRBG8:
-    {
-      return "V4L2_PIX_FMT_SGRBG8";
-    }
-    case V4L2_PIX_FMT_SRGGB8:
-    {
-      return "V4L2_PIX_FMT_SRGGB8";
-    }
-    case V4L2_PIX_FMT_SBGGR10:
-    {
-      return "V4L2_PIX_FMT_SBGGR10";
-    }
-    case V4L2_PIX_FMT_SGBRG10:
-    {
-      return "V4L2_PIX_FMT_SGBRG10";
-    }
-    case V4L2_PIX_FMT_SGRBG10:
-    {
-      return "V4L2_PIX_FMT_SGRBG10";
-    }
-    case V4L2_PIX_FMT_SRGGB10:
-    {
-      return "V4L2_PIX_FMT_SRGGB10";
-    }
-    case V4L2_PIX_FMT_SBGGR10P:
-    {
-      return "V4L2_PIX_FMT_SBGGR10P";
-    }
-    case V4L2_PIX_FMT_SGBRG10P:
-    {
-      return "V4L2_PIX_FMT_SGBRG10P";
-    }
-    case V4L2_PIX_FMT_SGRBG10P:
-    {
-      return "V4L2_PIX_FMT_SGRBG10P";
-    }
-    case V4L2_PIX_FMT_SRGGB10P:
-    {
-      return "V4L2_PIX_FMT_SRGGB10P";
-    }
-    case V4L2_PIX_FMT_SBGGR10ALAW8:
-    {
-      return "V4L2_PIX_FMT_SBGGR10ALAW8";
-    }
-    case V4L2_PIX_FMT_SGBRG10ALAW8:
-    {
-      return "V4L2_PIX_FMT_SGBRG10ALAW8";
-    }
-    case V4L2_PIX_FMT_SGRBG10ALAW8:
-    {
-      return "V4L2_PIX_FMT_SGRBG10ALAW8";
-    }
-    case V4L2_PIX_FMT_SRGGB10ALAW8:
-    {
-      return "V4L2_PIX_FMT_SRGGB10ALAW8";
-    }
-    case V4L2_PIX_FMT_SBGGR10DPCM8:
-    {
-      return "V4L2_PIX_FMT_SBGGR10DPCM8";
-    }
-    case V4L2_PIX_FMT_SGBRG10DPCM8:
-    {
-      return "V4L2_PIX_FMT_SGBRG10DPCM8";
-    }
-    case V4L2_PIX_FMT_SGRBG10DPCM8:
-    {
-      return "V4L2_PIX_FMT_SGRBG10DPCM8";
-    }
-    case V4L2_PIX_FMT_SRGGB10DPCM8:
-    {
-      return "V4L2_PIX_FMT_SRGGB10DPCM8";
-    }
-    case V4L2_PIX_FMT_SBGGR12:
-    {
-      return "V4L2_PIX_FMT_SBGGR12";
-    }
-    case V4L2_PIX_FMT_SGBRG12:
-    {
-      return "V4L2_PIX_FMT_SGBRG12";
-    }
-    case V4L2_PIX_FMT_SGRBG12:
-    {
-      return "V4L2_PIX_FMT_SGRBG12";
-    }
-    case V4L2_PIX_FMT_SRGGB12:
-    {
-      return "V4L2_PIX_FMT_SRGGB12";
-    }
-    case V4L2_PIX_FMT_SBGGR12P:
-    {
-      return "V4L2_PIX_FMT_SBGGR12P";
-    }
-    case V4L2_PIX_FMT_SGBRG12P:
-    {
-      return "V4L2_PIX_FMT_SGBRG12P";
-    }
-    case V4L2_PIX_FMT_SGRBG12P:
-    {
-      return "V4L2_PIX_FMT_SGRBG12P";
-    }
-    case V4L2_PIX_FMT_SRGGB12P:
-    {
-      return "V4L2_PIX_FMT_SRGGB12P";
-    }
-    case V4L2_PIX_FMT_SBGGR16:
-    {
-      return "V4L2_PIX_FMT_SBGGR16";
-    }
-    case V4L2_PIX_FMT_SGBRG16:
-    {
-      return "V4L2_PIX_FMT_SGBRG16";
-    }
-    case V4L2_PIX_FMT_SGRBG16:
-    {
-      return "V4L2_PIX_FMT_SGRBG16";
-    }
-    case V4L2_PIX_FMT_SRGGB16:
-    {
-      return "V4L2_PIX_FMT_SRGGB16";
-    }
-    case V4L2_PIX_FMT_HSV24:
-    {
-      return "V4L2_PIX_FMT_HSV24";
-    }
-    case V4L2_PIX_FMT_HSV32:
-    {
-      return "V4L2_PIX_FMT_HSV32";
-    }
-    case V4L2_PIX_FMT_MJPEG:
-    {
-      return "V4L2_PIX_FMT_MJPEG";
-    }
-    case V4L2_PIX_FMT_JPEG:
-    {
-      return "V4L2_PIX_FMT_JPEG";
-    }
-    case V4L2_PIX_FMT_DV:
-    {
-      return "V4L2_PIX_FMT_DV";
-    }
-    case V4L2_PIX_FMT_MPEG:
-    {
-      return "V4L2_PIX_FMT_MPEG";
-    }
-    case V4L2_PIX_FMT_H264:
-    {
-      return "V4L2_PIX_FMT_H264";
-    }
-    case V4L2_PIX_FMT_H264_NO_SC:
-    {
-      return "V4L2_PIX_FMT_H264_NO_SC";
-    }
-    case V4L2_PIX_FMT_H264_MVC:
-    {
-      return "V4L2_PIX_FMT_H264_MVC";
-    }
-    case V4L2_PIX_FMT_H263:
-    {
-      return "V4L2_PIX_FMT_H263";
-    }
-    case V4L2_PIX_FMT_MPEG1:
-    {
-      return "V4L2_PIX_FMT_MPEG1";
-    }
-    case V4L2_PIX_FMT_MPEG2:
-    {
-      return "V4L2_PIX_FMT_MPEG2";
-    }
-    case V4L2_PIX_FMT_MPEG4:
-    {
-      return "V4L2_PIX_FMT_MPEG4";
-    }
-    case V4L2_PIX_FMT_XVID:
-    {
-      return "V4L2_PIX_FMT_XVID";
-    }
-    case V4L2_PIX_FMT_VC1_ANNEX_G:
-    {
-      return "V4L2_PIX_FMT_VC1_ANNEX_G";
-    }
-    case V4L2_PIX_FMT_VC1_ANNEX_L:
-    {
-      return "V4L2_PIX_FMT_VC1_ANNEX_L";
-    }
-    case V4L2_PIX_FMT_VP8:
-    {
-      return "V4L2_PIX_FMT_VP8";
-    }
-    case V4L2_PIX_FMT_VP9:
-    {
-      return "V4L2_PIX_FMT_VP9";
-    }
-    case V4L2_PIX_FMT_CPIA1:
-    {
-      return "V4L2_PIX_FMT_CPIA1";
-    }
-    case V4L2_PIX_FMT_WNVA:
-    {
-      return "V4L2_PIX_FMT_WNVA";
-    }
-    case V4L2_PIX_FMT_SN9C10X:
-    {
-      return "V4L2_PIX_FMT_SN9C10X";
-    }
-    case V4L2_PIX_FMT_SN9C20X_I420:
-    {
-      return "V4L2_PIX_FMT_SN9C20X_I420";
-    }
-    case V4L2_PIX_FMT_PWC1:
-    {
-      return "V4L2_PIX_FMT_PWC1";
-    }
-    case V4L2_PIX_FMT_PWC2:
-    {
-      return "V4L2_PIX_FMT_PWC2";
-    }
-    case V4L2_PIX_FMT_ET61X251:
-    {
-      return "V4L2_PIX_FMT_ET61X251";
-    }
-    case V4L2_PIX_FMT_SPCA501:
-    {
-      return "V4L2_PIX_FMT_SPCA501";
-    }
-    case V4L2_PIX_FMT_SPCA505:
-    {
-      return "V4L2_PIX_FMT_SPCA505";
-    }
-    case V4L2_PIX_FMT_SPCA508:
-    {
-      return "V4L2_PIX_FMT_SPCA508";
-    }
-    case V4L2_PIX_FMT_SPCA561:
-    {
-      return "V4L2_PIX_FMT_SPCA561";
-    }
-    case V4L2_PIX_FMT_PAC207:
-    {
-      return "V4L2_PIX_FMT_PAC207";
-    }
-    case V4L2_PIX_FMT_MR97310A:
-    {
-      return "V4L2_PIX_FMT_MR97310A";
-    }
-    case V4L2_PIX_FMT_JL2005BCD:
-    {
-      return "V4L2_PIX_FMT_JL2005BCD";
-    }
-    case V4L2_PIX_FMT_SN9C2028:
-    {
-      return "V4L2_PIX_FMT_SN9C2028";
-    }
-    case V4L2_PIX_FMT_SQ905C:
-    {
-      return "V4L2_PIX_FMT_SQ905C";
-    }
-    case V4L2_PIX_FMT_PJPG:
-    {
-      return "V4L2_PIX_FMT_PJPG";
-    }
-    case V4L2_PIX_FMT_OV511:
-    {
-      return "V4L2_PIX_FMT_OV511";
-    }
-    case V4L2_PIX_FMT_OV518:
-    {
-      return "V4L2_PIX_FMT_OV518";
-    }
-    case V4L2_PIX_FMT_STV0680:
-    {
-      return "V4L2_PIX_FMT_STV0680";
-    }
-    case V4L2_PIX_FMT_TM6000:
-    {
-      return "V4L2_PIX_FMT_TM6000";
-    }
-    case V4L2_PIX_FMT_CIT_YYVYUY:
-    {
-      return "V4L2_PIX_FMT_CIT_YYVYUY";
-    }
-    case V4L2_PIX_FMT_KONICA420:
-    {
-      return "V4L2_PIX_FMT_KONICA420";
-    }
-    case V4L2_PIX_FMT_JPGL:
-    {
-      return "V4L2_PIX_FMT_JPGL";
-    }
-    case V4L2_PIX_FMT_SE401:
-    {
-      return "V4L2_PIX_FMT_SE401";
-    }
-    case V4L2_PIX_FMT_S5C_UYVY_JPG:
-    {
-      return "V4L2_PIX_FMT_S5C_UYVY_JPG";
-    }
-    case V4L2_PIX_FMT_Y8I:
-    {
-      return "V4L2_PIX_FMT_Y8I";
-    }
-    case V4L2_PIX_FMT_Y12I:
-    {
-      return "V4L2_PIX_FMT_Y12I";
-    }
-    case V4L2_PIX_FMT_Z16:
-    {
-      return "V4L2_PIX_FMT_Z16";
-    }
-    case V4L2_PIX_FMT_MT21C:
-    {
-      return "V4L2_PIX_FMT_MT21C";
-    }
-    case V4L2_PIX_FMT_INZI:
-    {
-      return "V4L2_PIX_FMT_INZI";
-    }
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_RGB332);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_RGB444);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_ARGB444);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_XRGB444);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_RGB555);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_ARGB555);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_XRGB555);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_RGB565);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_RGB555X);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_ARGB555X);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_XRGB555X);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_RGB565X);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_BGR666);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_BGR24);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_RGB24);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_BGR32);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_ABGR32);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_XBGR32);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_RGB32);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_ARGB32);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_XRGB32);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_GREY);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y4);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y6);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y10);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y12);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y16);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y16_BE);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y10BPACK);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_PAL8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_UV8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUYV);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YYUV);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YVYU);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_UYVY);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_VYUY);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y41P);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV444);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV555);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV565);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV32);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_HI240);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_HM12);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_M420);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV12);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV21);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV16);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV61);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV24);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV42);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV12M);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV21M);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV16M);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV61M);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV12MT);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_NV12MT_16X16);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV410);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YVU410);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV411P);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV420);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YVU420);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV422P);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV420M);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YVU420M);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV422M);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YVU422M);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV444M);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YVU444M);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR10);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG10);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG10);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB10);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR10P);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG10P);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG10P);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB10P);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR10ALAW8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG10ALAW8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG10ALAW8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB10ALAW8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR10DPCM8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG10DPCM8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG10DPCM8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB10DPCM8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR12);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG12);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG12);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB12);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR12P);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG12P);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG12P);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB12P);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR16);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG16);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG16);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB16);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_HSV24);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_HSV32);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_MJPEG);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_JPEG);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_DV);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_MPEG);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_H264);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_H264_NO_SC);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_H264_MVC);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_H263);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_MPEG1);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_MPEG2);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_MPEG4);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_XVID);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_VC1_ANNEX_G);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_VC1_ANNEX_L);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_VP8);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_VP9);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_CPIA1);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_WNVA);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SN9C10X);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SN9C20X_I420);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_PWC1);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_PWC2);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_ET61X251);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SPCA501);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SPCA505);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SPCA508);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SPCA561);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_PAC207);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_MR97310A);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_JL2005BCD);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SN9C2028);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SQ905C);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_PJPG);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_OV511);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_OV518);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_STV0680);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_TM6000);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_CIT_YYVYUY);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_KONICA420);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_JPGL);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SE401);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_S5C_UYVY_JPG);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y8I);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y12I);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Z16);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_MT21C);
+      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_INZI);
     default:
-    {
-      return "V4L2_PIX_FMT_XXXX";
-    }
+    {return "V4L2_PIX_FMT_XXXX";}
   }
 }
+#undef PIXEL_FORMAT_CASE
 
 //----------------------------------------------------------------------------
-v4l2_pix_format vtkPlusV4L2VideoSource::StringToFormat(const std::string& format)
+#define PIXEL_FORMAT_STRING_COMPARE(format, formatStr) else if (PlusCommon::IsEqualInsensitive(#format, formatStr)) return format
+pixelFormat vtkPlusV4L2VideoSource::StringToPixelFormat(const std::string& format)
 {
-  if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB332", format))
-  {
-    return V4L2_PIX_FMT_RGB332;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB444", format))
-  {
-    return V4L2_PIX_FMT_RGB444;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ARGB444", format))
-  {
-    return V4L2_PIX_FMT_ARGB444;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XRGB444", format))
-  {
-    return V4L2_PIX_FMT_XRGB444;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB555", format))
-  {
-    return V4L2_PIX_FMT_RGB555;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ARGB555", format))
-  {
-    return V4L2_PIX_FMT_ARGB555;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XRGB555", format))
-  {
-    return V4L2_PIX_FMT_XRGB555;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB565", format))
-  {
-    return V4L2_PIX_FMT_RGB565;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB555X", format))
-  {
-    return V4L2_PIX_FMT_RGB555X;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ARGB555X", format))
-  {
-    return V4L2_PIX_FMT_ARGB555X;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XRGB555X", format))
-  {
-    return V4L2_PIX_FMT_XRGB555X;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB565X", format))
-  {
-    return V4L2_PIX_FMT_RGB565X;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_BGR666", format))
-  {
-    return V4L2_PIX_FMT_BGR666;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_BGR24", format))
-  {
-    return V4L2_PIX_FMT_BGR24;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB24", format))
-  {
-    return V4L2_PIX_FMT_RGB24;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_BGR32", format))
-  {
-    return V4L2_PIX_FMT_BGR32;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ABGR32", format))
-  {
-    return V4L2_PIX_FMT_ABGR32;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XBGR32", format))
-  {
-    return V4L2_PIX_FMT_XBGR32;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB32", format))
-  {
-    return V4L2_PIX_FMT_RGB32;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ARGB32", format))
-  {
-    return V4L2_PIX_FMT_ARGB32;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XRGB32", format))
-  {
-    return V4L2_PIX_FMT_XRGB32;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_GREY", format))
-  {
-    return V4L2_PIX_FMT_GREY;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y4", format))
-  {
-    return V4L2_PIX_FMT_Y4;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y6", format))
-  {
-    return V4L2_PIX_FMT_Y6;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y10", format))
-  {
-    return V4L2_PIX_FMT_Y10;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y12", format))
-  {
-    return V4L2_PIX_FMT_Y12;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y16", format))
-  {
-    return V4L2_PIX_FMT_Y16;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y16_BE", format))
-  {
-    return V4L2_PIX_FMT_Y16_BE;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y10BPACK", format))
-  {
-    return V4L2_PIX_FMT_Y10BPACK;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_PAL8", format))
-  {
-    return V4L2_PIX_FMT_PAL8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_UV8", format))
-  {
-    return V4L2_PIX_FMT_UV8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUYV", format))
-  {
-    return V4L2_PIX_FMT_YUYV;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YYUV", format))
-  {
-    return V4L2_PIX_FMT_YYUV;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVYU", format))
-  {
-    return V4L2_PIX_FMT_YVYU;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_UYVY", format))
-  {
-    return V4L2_PIX_FMT_UYVY;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_VYUY", format))
-  {
-    return V4L2_PIX_FMT_VYUY;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y41P", format))
-  {
-    return V4L2_PIX_FMT_Y41P;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV444", format))
-  {
-    return V4L2_PIX_FMT_YUV444;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV555", format))
-  {
-    return V4L2_PIX_FMT_YUV555;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV565", format))
-  {
-    return V4L2_PIX_FMT_YUV565;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV32", format))
-  {
-    return V4L2_PIX_FMT_YUV32;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_HI240", format))
-  {
-    return V4L2_PIX_FMT_HI240;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_HM12", format))
-  {
-    return V4L2_PIX_FMT_HM12;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_M420", format))
-  {
-    return V4L2_PIX_FMT_M420;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV12", format))
-  {
-    return V4L2_PIX_FMT_NV12;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV21", format))
-  {
-    return V4L2_PIX_FMT_NV21;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV16", format))
-  {
-    return V4L2_PIX_FMT_NV16;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV61", format))
-  {
-    return V4L2_PIX_FMT_NV61;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV24", format))
-  {
-    return V4L2_PIX_FMT_NV24;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV42", format))
-  {
-    return V4L2_PIX_FMT_NV42;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV12M", format))
-  {
-    return V4L2_PIX_FMT_NV12M;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV21M", format))
-  {
-    return V4L2_PIX_FMT_NV21M;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV16M", format))
-  {
-    return V4L2_PIX_FMT_NV16M;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV61M", format))
-  {
-    return V4L2_PIX_FMT_NV61M;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV12MT", format))
-  {
-    return V4L2_PIX_FMT_NV12MT;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_NV12MT_16X16", format))
-  {
-    return V4L2_PIX_FMT_NV12MT_16X16;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV410", format))
-  {
-    return V4L2_PIX_FMT_YUV410;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVU410", format))
-  {
-    return V4L2_PIX_FMT_YVU410;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV411P", format))
-  {
-    return V4L2_PIX_FMT_YUV411P;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV420", format))
-  {
-    return V4L2_PIX_FMT_YUV420;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVU420", format))
-  {
-    return V4L2_PIX_FMT_YVU420;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV422P", format))
-  {
-    return V4L2_PIX_FMT_YUV422P;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV420M", format))
-  {
-    return V4L2_PIX_FMT_YUV420M;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVU420M", format))
-  {
-    return V4L2_PIX_FMT_YVU420M;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV422M", format))
-  {
-    return V4L2_PIX_FMT_YUV422M;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVU422M", format))
-  {
-    return V4L2_PIX_FMT_YVU422M;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YUV444M", format))
-  {
-    return V4L2_PIX_FMT_YUV444M;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_YVU444M", format))
-  {
-    return V4L2_PIX_FMT_YVU444M;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR8", format))
-  {
-    return V4L2_PIX_FMT_SBGGR8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG8", format))
-  {
-    return V4L2_PIX_FMT_SGBRG8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG8", format))
-  {
-    return V4L2_PIX_FMT_SGRBG8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB8", format))
-  {
-    return V4L2_PIX_FMT_SRGGB8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR10", format))
-  {
-    return V4L2_PIX_FMT_SBGGR10;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG10", format))
-  {
-    return V4L2_PIX_FMT_SGBRG10;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG10", format))
-  {
-    return V4L2_PIX_FMT_SGRBG10;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB10", format))
-  {
-    return V4L2_PIX_FMT_SRGGB10;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR10P", format))
-  {
-    return V4L2_PIX_FMT_SBGGR10P;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG10P", format))
-  {
-    return V4L2_PIX_FMT_SGBRG10P;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG10P", format))
-  {
-    return V4L2_PIX_FMT_SGRBG10P;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB10P", format))
-  {
-    return V4L2_PIX_FMT_SRGGB10P;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR10ALAW8", format))
-  {
-    return V4L2_PIX_FMT_SBGGR10ALAW8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG10ALAW8", format))
-  {
-    return V4L2_PIX_FMT_SGBRG10ALAW8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG10ALAW8", format))
-  {
-    return V4L2_PIX_FMT_SGRBG10ALAW8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB10ALAW8", format))
-  {
-    return V4L2_PIX_FMT_SRGGB10ALAW8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR10DPCM8", format))
-  {
-    return V4L2_PIX_FMT_SBGGR10DPCM8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG10DPCM8", format))
-  {
-    return V4L2_PIX_FMT_SGBRG10DPCM8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG10DPCM8", format))
-  {
-    return V4L2_PIX_FMT_SGRBG10DPCM8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB10DPCM8", format))
-  {
-    return V4L2_PIX_FMT_SRGGB10DPCM8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR12", format))
-  {
-    return V4L2_PIX_FMT_SBGGR12;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG12", format))
-  {
-    return V4L2_PIX_FMT_SGBRG12;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG12", format))
-  {
-    return V4L2_PIX_FMT_SGRBG12;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB12", format))
-  {
-    return V4L2_PIX_FMT_SRGGB12;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR12P", format))
-  {
-    return V4L2_PIX_FMT_SBGGR12P;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG12P", format))
-  {
-    return V4L2_PIX_FMT_SGBRG12P;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG12P", format))
-  {
-    return V4L2_PIX_FMT_SGRBG12P;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB12P", format))
-  {
-    return V4L2_PIX_FMT_SRGGB12P;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SBGGR16", format))
-  {
-    return V4L2_PIX_FMT_SBGGR16;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGBRG16", format))
-  {
-    return V4L2_PIX_FMT_SGBRG16;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SGRBG16", format))
-  {
-    return V4L2_PIX_FMT_SGRBG16;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SRGGB16", format))
-  {
-    return V4L2_PIX_FMT_SRGGB16;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_HSV24", format))
-  {
-    return V4L2_PIX_FMT_HSV24;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_HSV32", format))
-  {
-    return V4L2_PIX_FMT_HSV32;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MJPEG", format))
-  {
-    return V4L2_PIX_FMT_MJPEG;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_JPEG", format))
-  {
-    return V4L2_PIX_FMT_JPEG;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_DV", format))
-  {
-    return V4L2_PIX_FMT_DV;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MPEG", format))
-  {
-    return V4L2_PIX_FMT_MPEG;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_H264", format))
-  {
-    return V4L2_PIX_FMT_H264;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_H264_NO_SC", format))
-  {
-    return V4L2_PIX_FMT_H264_NO_SC;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_H264_MVC", format))
-  {
-    return V4L2_PIX_FMT_H264_MVC;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_H263", format))
-  {
-    return V4L2_PIX_FMT_H263;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MPEG1", format))
-  {
-    return V4L2_PIX_FMT_MPEG1;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MPEG2", format))
-  {
-    return V4L2_PIX_FMT_MPEG2;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MPEG4", format))
-  {
-    return V4L2_PIX_FMT_MPEG4;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_XVID", format))
-  {
-    return V4L2_PIX_FMT_XVID;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_VC1_ANNEX_G", format))
-  {
-    return V4L2_PIX_FMT_VC1_ANNEX_G;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_VC1_ANNEX_L", format))
-  {
-    return V4L2_PIX_FMT_VC1_ANNEX_L;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_VP8", format))
-  {
-    return V4L2_PIX_FMT_VP8;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_VP9", format))
-  {
-    return V4L2_PIX_FMT_VP9;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_CPIA1", format))
-  {
-    return V4L2_PIX_FMT_CPIA1;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_WNVA", format))
-  {
-    return V4L2_PIX_FMT_WNVA;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SN9C10X", format))
-  {
-    return V4L2_PIX_FMT_SN9C10X;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SN9C20X_I420", format))
-  {
-    return V4L2_PIX_FMT_SN9C20X_I420;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_PWC1", format))
-  {
-    return V4L2_PIX_FMT_PWC1;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_PWC2", format))
-  {
-    return V4L2_PIX_FMT_PWC2;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_ET61X251", format))
-  {
-    return V4L2_PIX_FMT_ET61X251;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SPCA501", format))
-  {
-    return V4L2_PIX_FMT_SPCA501;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SPCA505", format))
-  {
-    return V4L2_PIX_FMT_SPCA505;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SPCA508", format))
-  {
-    return V4L2_PIX_FMT_SPCA508;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SPCA561", format))
-  {
-    return V4L2_PIX_FMT_SPCA561;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_PAC207", format))
-  {
-    return V4L2_PIX_FMT_PAC207;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MR97310A", format))
-  {
-    return V4L2_PIX_FMT_MR97310A;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_JL2005BCD", format))
-  {
-    return V4L2_PIX_FMT_JL2005BCD;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SN9C2028", format))
-  {
-    return V4L2_PIX_FMT_SN9C2028;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SQ905C", format))
-  {
-    return V4L2_PIX_FMT_SQ905C;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_PJPG", format))
-  {
-    return V4L2_PIX_FMT_PJPG;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_OV511", format))
-  {
-    return V4L2_PIX_FMT_OV511;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_OV518", format))
-  {
-    return V4L2_PIX_FMT_OV518;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_STV0680", format))
-  {
-    return V4L2_PIX_FMT_STV0680;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_TM6000", format))
-  {
-    return V4L2_PIX_FMT_TM6000;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_CIT_YYVYUY", format))
-  {
-    return V4L2_PIX_FMT_CIT_YYVYUY;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_KONICA420", format))
-  {
-    return V4L2_PIX_FMT_KONICA420;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_JPGL", format))
-  {
-    return V4L2_PIX_FMT_JPGL;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_SE401", format))
-  {
-    return V4L2_PIX_FMT_SE401;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_S5C_UYVY_JPG", format))
-  {
-    return V4L2_PIX_FMT_S5C_UYVY_JPG;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y8I", format))
-  {
-    return V4L2_PIX_FMT_Y8I;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Y12I", format))
-  {
-    return V4L2_PIX_FMT_Y12I;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_Z16", format))
-  {
-    return V4L2_PIX_FMT_Z16;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_MT21C", format))
-  {
-    return V4L2_PIX_FMT_MT21C;
-  }
-  else if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_INZI", format))
-  {
-    return V4L2_PIX_FMT_INZI;
-  }
-  else
-  {
-    return v4l2_fourcc('x', 'x', 'x', 'x');
-  }
+  if (PlusCommon::IsEqualInsensitive("V4L2_PIX_FMT_RGB332", format)) {return V4L2_PIX_FMT_RGB332;}
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_RGB444);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_ARGB444);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_XRGB444);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_RGB555);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_ARGB555);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_XRGB555);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_RGB565);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_RGB555X);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_ARGB555X);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_XRGB555X);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_RGB565X);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_BGR666);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_BGR24);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_RGB24);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_BGR32);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_ABGR32);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_XBGR32);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_RGB32);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_ARGB32);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_XRGB32);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_GREY);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y4);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y6);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y10);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y12);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y16);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y16_BE);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y10BPACK);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_PAL8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_UV8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUYV);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YYUV);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YVYU);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_UYVY);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_VYUY);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y41P);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV444);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV555);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV565);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV32);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_HI240);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_HM12);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_M420);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV12);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV21);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV16);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV61);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV24);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV42);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV12M);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV21M);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV16M);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV61M);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV12MT);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_NV12MT_16X16);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV410);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YVU410);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV411P);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV420);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YVU420);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV422P);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV420M);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YVU420M);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV422M);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YVU422M);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV444M);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YVU444M);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR10);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG10);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG10);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB10);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR10P);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG10P);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG10P);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB10P);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR10ALAW8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG10ALAW8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG10ALAW8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB10ALAW8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR10DPCM8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG10DPCM8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG10DPCM8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB10DPCM8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR12);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG12);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG12);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB12);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR12P);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG12P);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG12P);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB12P);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR16);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG16);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG16);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB16);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_HSV24);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_HSV32);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_MJPEG);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_JPEG);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_DV);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_MPEG);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_H264);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_H264_NO_SC);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_H264_MVC);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_H263);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_MPEG1);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_MPEG2);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_MPEG4);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_XVID);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_VC1_ANNEX_G);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_VC1_ANNEX_L);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_VP8);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_VP9);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_CPIA1);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_WNVA);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SN9C10X);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SN9C20X_I420);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_PWC1);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_PWC2);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_ET61X251);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SPCA501);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SPCA505);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SPCA508);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SPCA561);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_PAC207);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_MR97310A);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_JL2005BCD);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SN9C2028);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SQ905C);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_PJPG);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_OV511);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_OV518);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_STV0680);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_TM6000);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_CIT_YYVYUY);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_KONICA420);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_JPGL);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SE401);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_S5C_UYVY_JPG);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y8I);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y12I);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Z16);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_MT21C);
+  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_INZI);
+  else {return v4l2_fourcc('x', 'x', 'x', 'x');}
 }
+#undef PIXEL_FORMAT_STRING_COMPARE
 
 //----------------------------------------------------------------------------
+#define FIELD_ORDER_CASE(field) case field: return #field
 std::string vtkPlusV4L2VideoSource::FieldOrderToString(v4l2_field field)
 {
-  switch(field)
+  switch (field)
   {
-case V4L2_FIELD_ANY:
-{
- return "V4L2_FIELD_ANY";
+      FIELD_ORDER_CASE(V4L2_FIELD_ANY);
+      FIELD_ORDER_CASE(V4L2_FIELD_NONE);
+      FIELD_ORDER_CASE(V4L2_FIELD_TOP);
+      FIELD_ORDER_CASE(V4L2_FIELD_BOTTOM);
+      FIELD_ORDER_CASE(V4L2_FIELD_INTERLACED);
+      FIELD_ORDER_CASE(V4L2_FIELD_SEQ_TB);
+      FIELD_ORDER_CASE(V4L2_FIELD_SEQ_BT);
+      FIELD_ORDER_CASE(V4L2_FIELD_ALTERNATE);
+      FIELD_ORDER_CASE(V4L2_FIELD_INTERLACED_TB);
+      FIELD_ORDER_CASE(V4L2_FIELD_INTERLACED_BT);
+    default:
+    {return "V4L2_FIELD_ANY";}
+  }
 }
-case V4L2_FIELD_NONE:
-{
- return "V4L2_FIELD_NONE";
-}
-case V4L2_FIELD_TOP:
-{
- return "V4L2_FIELD_TOP";
-}
-case V4L2_FIELD_BOTTOM:
-{
- return "V4L2_FIELD_BOTTOM";
-}
-case V4L2_FIELD_INTERLACED:
-{
- return "V4L2_FIELD_INTERLACED";
-}
-case V4L2_FIELD_SEQ_TB:
-{
- return "V4L2_FIELD_SEQ_TB";
-}
-case V4L2_FIELD_SEQ_BT:
-{
- return "V4L2_FIELD_SEQ_BT";
-}
-case V4L2_FIELD_ALTERNATE:
-{
- return "V4L2_FIELD_ALTERNATE";
-}
-case V4L2_FIELD_INTERLACED_TB:
-{
- return "V4L2_FIELD_INTERLACED_TB";
-}
-case V4L2_FIELD_INTERLACED_BT:
-{
- return "V4L2_FIELD_INTERLACED_BT";
-}
-default:
-{
-      return "V4L2_FIELD_ANY";
-}
-}
-}
+#undef FIELD_ORDER_CASE
 
 //----------------------------------------------------------------------------
+#define FIELD_ORDER_STRING_COMPARE(field, fieldStr) else if (PlusCommon::IsEqualInsensitive(#field, fieldStr)){return field;}
 v4l2_field vtkPlusV4L2VideoSource::StringToFieldOrder(const std::string& field)
 {
-if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_ANY", field))
-{
-return V4L2_FIELD_ANY;
+  if (PlusCommon::IsEqualInsensitive("V4L2_FIELD_ANY", field)) {return V4L2_FIELD_ANY;}
+  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_NONE, field);
+  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_TOP, field);
+  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_BOTTOM, field);
+  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_INTERLACED, field);
+  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_SEQ_TB, field);
+  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_SEQ_BT, field);
+  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_ALTERNATE, field);
+  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_INTERLACED_TB, field);
+  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_INTERLACED_BT, field);
+  else {return V4L2_FIELD_ANY;}
 }
-else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_NONE", field))
-{
-return V4L2_FIELD_NONE;
-}
-else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_TOP", field))
-{
-return V4L2_FIELD_TOP;
-}
-else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_BOTTOM", field))
-{
-return V4L2_FIELD_BOTTOM;
-}
-else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_INTERLACED", field))
-{
-return V4L2_FIELD_INTERLACED;
-}
-else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_SEQ_TB", field))
-{
-return V4L2_FIELD_SEQ_TB;
-}
-else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_SEQ_BT", field))
-{
-return V4L2_FIELD_SEQ_BT;
-}
-else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_ALTERNATE", field))
-{
-return V4L2_FIELD_ALTERNATE;
-}
-else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_INTERLACED_TB", field))
-{
-return V4L2_FIELD_INTERLACED_TB;
-}
-else if(PlusCommon::IsEqualInsensitive("V4L2_FIELD_INTERLACED_BT", field))
-{
-return V4L2_FIELD_INTERLACED_BT;
-}
-else
-{
-return V4L2_FIELD_ANY;
-}
-}
+#undef FIELD_ORDER_STRING_COMPARE

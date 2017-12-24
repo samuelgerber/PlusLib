@@ -67,6 +67,11 @@ protected:
   ~vtkPlusV4L2VideoSource();
 
   PlusStatus ReadFrame();
+
+  PlusStatus ReadFrameFD();
+  PlusStatus ReadFrameMMAP();
+  PlusStatus ReadFrameUserPtr();
+
   PlusStatus InitRead(unsigned int bufferSize);
   PlusStatus InitMmap();
   PlusStatus InitUserp(unsigned int bufferSize);
@@ -77,25 +82,33 @@ protected:
   virtual PlusStatus InternalStopRecording() VTK_OVERRIDE;
   virtual PlusStatus InternalStartRecording() VTK_OVERRIDE;
 
+  // Conversion methods
   static std::string IOMethodToString(V4L2_IO_METHOD ioMethod);
   static V4L2_IO_METHOD StringToIOMethod(const std::string& method);
 
-  static std::string FormatToString(v4l2_pix_format format);
-  static v4l2_pix_format StringToFormat(const std::string& format);
+  static std::string PixelFormatToString(unsigned int format);
+  static unsigned int StringToPixelFormat(const std::string& format);
 
   static std::string FieldOrderToString(v4l2_field field);
   static v4l2_field StringToFieldOrder(const std::string& field);
 
 protected:
-  std::string DeviceName;
-  V4L2_IO_METHOD IOMethod;
-  int FileDescriptor;
+  std::string                   DeviceName;
+  V4L2_IO_METHOD                IOMethod;
+  int                           FileDescriptor;
 
   // TODO can we write to bufferitems directly?
-  FrameBuffer* Frames;
-  unsigned int BufferCount;
+  FrameBuffer*                  Frames;
+  unsigned int                  BufferCount;
 
-  std::shared_ptr<v4l2_format> RequestedFormat = nullptr;
+  // If requested, override these settings
+  std::shared_ptr<unsigned int> FormatWidth;
+  std::shared_ptr<unsigned int> FormatHeight;
+  std::shared_ptr<unsigned int> PixelFormat;
+  std::shared_ptr<v4l2_field>   FieldOrder;
+
+  // Cache current device format
+  std::shared_ptr<v4l2_format>  DeviceFormat;
 };
 
 #endif
