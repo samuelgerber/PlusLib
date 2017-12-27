@@ -10,9 +10,10 @@
 #include "vtkPlusDataCollectionExport.h"
 #include "vtkPlusDevice.h"
 
+class vtkPlusDataSource;
+struct v4l2_field;
 struct v4l2_format;
 struct v4l2_pix_format;
-struct v4l2_field;
 
 /*!
  \class vtkPlusV4L2VideoSource
@@ -66,11 +67,11 @@ protected:
   vtkPlusV4L2VideoSource();
   ~vtkPlusV4L2VideoSource();
 
-  PlusStatus ReadFrame();
+  PlusStatus ReadFrame(unsigned int& currentBufferIndex, unsigned int& bytesUsed);
 
-  PlusStatus ReadFrameFD();
-  PlusStatus ReadFrameMMAP();
-  PlusStatus ReadFrameUserPtr();
+  PlusStatus ReadFrameFileDescriptor(unsigned int& currentBufferIndex, unsigned int& bytesUsed);
+  PlusStatus ReadFrameMemoryMap(unsigned int& currentBufferIndex, unsigned int& bytesUsed);
+  PlusStatus ReadFrameUserPtr(unsigned int& currentBufferIndex, unsigned int& bytesUsed);
 
   PlusStatus InitRead(unsigned int bufferSize);
   PlusStatus InitMmap();
@@ -93,22 +94,26 @@ protected:
   static v4l2_field StringToFieldOrder(const std::string& field);
 
 protected:
-  std::string                   DeviceName;
-  V4L2_IO_METHOD                IOMethod;
-  int                           FileDescriptor;
+  // Configuration variables
+  std::string                     DeviceName;
+  V4L2_IO_METHOD                  IOMethod;
+  // If not nullptr, override these settings in InternalConnect
+  std::shared_ptr<unsigned int>   FormatWidth;
+  std::shared_ptr<unsigned int>   FormatHeight;
+  std::shared_ptr<unsigned int>   PixelFormat;
+  std::shared_ptr<v4l2_field>     FieldOrder;
 
-  // TODO can we write to bufferitems directly?
-  FrameBuffer*                  Frames;
-  unsigned int                  BufferCount;
+  // State variables
+  int                             FileDescriptor;
+  FrameBuffer*                    FrameBuffers;
+  unsigned int                    BufferCount;
+  vtkPlusDataSource*              DataSource;
+  PlusTrackedFrame::FieldMapType  FrameFields;
+  std::shared_ptr<v4l2_format>    DeviceFormat;
 
-  // If requested, override these settings
-  std::shared_ptr<unsigned int> FormatWidth;
-  std::shared_ptr<unsigned int> FormatHeight;
-  std::shared_ptr<unsigned int> PixelFormat;
-  std::shared_ptr<v4l2_field>   FieldOrder;
-
-  // Cache current device format
-  std::shared_ptr<v4l2_format>  DeviceFormat;
+  // Cached state variable (duplicate of DeviceFormat members, for passing to Plus functions)
+  FrameSizeType                   ImageSize;
+  uint32_t                        NumberOfScalarComponents; // Calculated from device format in InternalConnect
 };
 
 #endif

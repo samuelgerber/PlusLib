@@ -53,13 +53,14 @@ vtkPlusV4L2VideoSource::vtkPlusV4L2VideoSource()
   : DeviceName("")
   , IOMethod(IO_METHOD_READ)
   , FileDescriptor(-1)
-  , Frames(nullptr)
+  , FrameBuffers(nullptr)
   , BufferCount(0)
   , DeviceFormat(std::make_shared<v4l2_format>())
   , FormatWidth(nullptr)
   , FormatHeight(nullptr)
   , PixelFormat(nullptr)
   , FieldOrder(nullptr)
+  , DataSource(nullptr)
 {
 
 }
@@ -168,22 +169,24 @@ PlusStatus vtkPlusV4L2VideoSource::WriteConfiguration(vtkXMLDataElement* rootCon
 //-----------------------------------------------------------------------------
 PlusStatus vtkPlusV4L2VideoSource::InitRead(unsigned int bufferSize)
 {
-  this->Frames = (FrameBuffer*) calloc(1, sizeof(FrameBuffer));
+  this->FrameBuffers = (FrameBuffer*) calloc(1, sizeof(FrameBuffer));
 
-  if (!this->Frames)
+  if (!this->FrameBuffers)
   {
     LOG_ERROR("Unable to allocate " << sizeof(FrameBuffer) << " bytes for capture frame.");
     return PLUS_FAIL;
   }
 
-  this->Frames[0].length = bufferSize;
-  this->Frames[0].start = malloc(bufferSize);
+  this->FrameBuffers[0].length = bufferSize;
+  this->FrameBuffers[0].start = malloc(bufferSize);
 
-  if (!this->Frames[0].start)
+  if (!this->FrameBuffers[0].start)
   {
     LOG_ERROR("Unable to allocate " << bufferSize << " bytes for capture frame.");
     return PLUS_FAIL;
   }
+
+  this->BufferCount = 1;
 
   return PLUS_SUCCESS;
 }
@@ -218,9 +221,9 @@ PlusStatus vtkPlusV4L2VideoSource::InitMmap()
     return PLUS_FAIL;
   }
 
-  this->Frames = (FrameBuffer*) calloc(req.count, sizeof(FrameBuffer));
+  this->FrameBuffers = (FrameBuffer*) calloc(req.count, sizeof(FrameBuffer));
 
-  if (!this->Frames)
+  if (!this->FrameBuffers)
   {
     LOG_ERROR("Out of memory");
     return PLUS_FAIL;
@@ -241,10 +244,10 @@ PlusStatus vtkPlusV4L2VideoSource::InitMmap()
       return PLUS_FAIL;
     }
 
-    this->Frames[this->BufferCount].length = buf.length;
-    this->Frames[this->BufferCount].start = mmap(NULL /* start anywhere */, buf.length, PROT_READ | PROT_WRITE /* required */, MAP_SHARED /* recommended */, this->FileDescriptor, buf.m.offset);
+    this->FrameBuffers[this->BufferCount].length = buf.length;
+    this->FrameBuffers[this->BufferCount].start = mmap(NULL /* start anywhere */, buf.length, PROT_READ | PROT_WRITE /* required */, MAP_SHARED /* recommended */, this->FileDescriptor, buf.m.offset);
 
-    if (MAP_FAILED == this->Frames[this->BufferCount].start)
+    if (MAP_FAILED == this->FrameBuffers[this->BufferCount].start)
     {
       LOG_ERROR("mmap" << ": " << strerror(errno));
     }
@@ -277,9 +280,9 @@ PlusStatus vtkPlusV4L2VideoSource::InitUserp(unsigned int bufferSize)
     return PLUS_FAIL;
   }
 
-  this->Frames = (FrameBuffer*) calloc(4, sizeof(FrameBuffer));
+  this->FrameBuffers = (FrameBuffer*) calloc(4, sizeof(FrameBuffer));
 
-  if (!this->Frames)
+  if (!this->FrameBuffers)
   {
     LOG_ERROR("Out of memory");
     return PLUS_FAIL;
@@ -287,10 +290,10 @@ PlusStatus vtkPlusV4L2VideoSource::InitUserp(unsigned int bufferSize)
 
   for (this->BufferCount = 0; this->BufferCount < 4; ++this->BufferCount)
   {
-    this->Frames[this->BufferCount].length = bufferSize;
-    this->Frames[this->BufferCount].start = malloc(bufferSize);
+    this->FrameBuffers[this->BufferCount].length = bufferSize;
+    this->FrameBuffers[this->BufferCount].start = malloc(bufferSize);
 
-    if (!this->Frames[this->BufferCount].start)
+    if (!this->FrameBuffers[this->BufferCount].start)
     {
       LOG_ERROR("Out of memory");
       return PLUS_FAIL;
@@ -435,6 +438,18 @@ PlusStatus vtkPlusV4L2VideoSource::InternalConnect()
     }
   }
 
+  assert(this->DataSource != nullptr);
+
+  this->DataSource->SetInputFrameSize(this->DeviceFormat->fmt.pix.width, this->DeviceFormat->fmt.pix.height, 1);
+  this->ImageSize[0] = this->DeviceFormat->fmt.pix.width;
+  this->ImageSize[1] = this->DeviceFormat->fmt.pix.height;
+  this->ImageSize[2] = 1;
+  this->DataSource->SetPixelType(VTK_UNSIGNED_CHAR);
+  this->NumberOfScalarComponents = this->DeviceFormat->fmt.pix.sizeimage / this->DeviceFormat->fmt.pix.width / this->DeviceFormat->fmt.pix.height;
+  this->DataSource->SetNumberOfScalarComponents(this->NumberOfScalarComponents);
+
+  this->FrameFields["pixelformat"] = vtkPlusV4L2VideoSource::PixelFormatToString(this->DeviceFormat->fmt.pix.pixelformat);
+
   // Use this->DeviceFormat to initialize data source
   switch (this->IOMethod)
   {
@@ -464,14 +479,14 @@ PlusStatus vtkPlusV4L2VideoSource::InternalDisconnect()
   {
     case IO_METHOD_READ:
     {
-      free(this->Frames[0].start);
+      free(this->FrameBuffers[0].start);
       break;
     }
     case IO_METHOD_MMAP:
     {
       for (unsigned int i = 0; i < this->BufferCount; ++i)
       {
-        if (-1 == munmap(this->Frames[i].start, this->Frames[i].length))
+        if (-1 == munmap(this->FrameBuffers[i].start, this->FrameBuffers[i].length))
         {
           LOG_ERROR("munmap" << ": " << strerror(errno));
           return PLUS_FAIL;
@@ -483,13 +498,13 @@ PlusStatus vtkPlusV4L2VideoSource::InternalDisconnect()
     {
       for (unsigned int i = 0; i < this->BufferCount; ++i)
       {
-        free(this->Frames[i].start);
+        free(this->FrameBuffers[i].start);
       }
       break;
     }
   }
 
-  free(this->Frames);
+  free(this->FrameBuffers);
 
   if (-1 == close(this->FileDescriptor))
   {
@@ -531,32 +546,39 @@ PlusStatus vtkPlusV4L2VideoSource::InternalUpdate()
     return PLUS_FAIL;
   }
 
-  if (this->ReadFrame() != PLUS_SUCCESS)
+  unsigned int currentBufferIndex;
+  unsigned int bytesUsed;
+  if (this->ReadFrame(currentBufferIndex, bytesUsed) != PLUS_SUCCESS)
   {
     return PLUS_FAIL;
   }
 
-  this->FrameNumber++;
+  if (this->DataSource->AddItem(this->FrameBuffers[currentBufferIndex].start, this->ImageSize, US_IMG_ORIENT_MF, this->ImageSize, VTK_UNSIGNED_CHAR, this->NumberOfScalarComponents, US_IMG_BRIGHTNESS, 0, this->FrameNumber, UNDEFINED_TIMESTAMP, UNDEFINED_TIMESTAMP, &this->FrameFields) != PLUS_SUCCESS)
+  {
+    LOG_ERROR("vtkPlusV4L2VideoSource::Unable to add item to the buffer.");
+    return PLUS_FAIL;
+  }
 
+  this->FrameNumber++;
   return PLUS_SUCCESS;
 }
 
 //----------------------------------------------------------------------------
-PlusStatus vtkPlusV4L2VideoSource::ReadFrame()
+PlusStatus vtkPlusV4L2VideoSource::ReadFrame(unsigned int& currentBufferIndex, unsigned int& bytesUsed)
 {
   switch (this->IOMethod)
   {
     case IO_METHOD_READ:
     {
-      return ReadFrameFD();
+      return ReadFrameFileDescriptor(currentBufferIndex, bytesUsed);
     }
     case IO_METHOD_MMAP:
     {
-      return ReadFrameMMAP();
+      return ReadFrameMemoryMap(currentBufferIndex, bytesUsed);
     }
     case IO_METHOD_USERPTR:
     {
-      return ReadFrameUserPtr();
+      return ReadFrameUserPtr(currentBufferIndex, bytesUsed);
     }
   }
 
@@ -564,9 +586,9 @@ PlusStatus vtkPlusV4L2VideoSource::ReadFrame()
 }
 
 //----------------------------------------------------------------------------
-PlusStatus vtkPlusV4L2VideoSource::ReadFrameFD()
+PlusStatus vtkPlusV4L2VideoSource::ReadFrameFileDescriptor(unsigned int& currentBufferIndex, unsigned int& bytesUsed)
 {
-  if (-1 == read(this->FileDescriptor, this->Frames[0].start, this->Frames[0].length))
+  if (-1 == read(this->FileDescriptor, this->FrameBuffers[0].start, this->FrameBuffers[0].length))
   {
     switch (errno)
     {
@@ -586,11 +608,14 @@ PlusStatus vtkPlusV4L2VideoSource::ReadFrameFD()
     }
   }
 
+  currentBufferIndex = 0;
+  bytesUsed = this->FrameBuffers[0].length;
+
   return PLUS_SUCCESS;
 }
 
 //----------------------------------------------------------------------------
-PlusStatus vtkPlusV4L2VideoSource::ReadFrameMMAP()
+PlusStatus vtkPlusV4L2VideoSource::ReadFrameMemoryMap(unsigned int& currentBufferIndex, unsigned int& bytesUsed)
 {
   v4l2_buffer buf;
   CLEAR(buf);
@@ -624,11 +649,14 @@ PlusStatus vtkPlusV4L2VideoSource::ReadFrameMMAP()
     return PLUS_FAIL;
   }
 
+  currentBufferIndex = buf.index;
+  bytesUsed = buf.bytesused;
+
   return PLUS_SUCCESS;
 }
 
 //----------------------------------------------------------------------------
-PlusStatus vtkPlusV4L2VideoSource::ReadFrameUserPtr()
+PlusStatus vtkPlusV4L2VideoSource::ReadFrameUserPtr(unsigned int& currentBufferIndex, unsigned int& bytesUsed)
 {
   v4l2_buffer buf;
   CLEAR(buf);
@@ -656,9 +684,9 @@ PlusStatus vtkPlusV4L2VideoSource::ReadFrameUserPtr()
     }
   }
 
-  for (unsigned int i = 0; i < this->BufferCount; ++i)
+  for (currentBufferIndex = 0; currentBufferIndex < this->BufferCount; ++currentBufferIndex)
   {
-    if (buf.m.userptr == (unsigned long) this->Frames[i].start && buf.length == this->Frames[i].length)
+    if (buf.m.userptr == (unsigned long) this->FrameBuffers[currentBufferIndex].start && buf.length == this->FrameBuffers[currentBufferIndex].length)
     {
       break;
     }
@@ -670,6 +698,8 @@ PlusStatus vtkPlusV4L2VideoSource::ReadFrameUserPtr()
     return PLUS_FAIL;
   }
 
+  bytesUsed = buf.bytesused;
+
   return PLUS_SUCCESS;
 }
 
@@ -680,6 +710,12 @@ PlusStatus vtkPlusV4L2VideoSource::NotifyConfigured()
   {
     LOG_ERROR("No output channels defined for vtkPlusV4L2VideoSource. Cannot proceed.");
     this->CorrectlyConfigured = false;
+    return PLUS_FAIL;
+  }
+
+  if (this->GetFirstActiveOutputVideoSource(this->DataSource) != PLUS_SUCCESS)
+  {
+    LOG_ERROR("Cannot retrieve first output video source. Unable to start device.");
     return PLUS_FAIL;
   }
 
@@ -753,8 +789,8 @@ PlusStatus vtkPlusV4L2VideoSource::InternalStartRecording()
         buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         buf.memory = V4L2_MEMORY_USERPTR;
         buf.index = i;
-        buf.m.userptr = (unsigned long) this->Frames[i].start;
-        buf.length = this->Frames[i].length;
+        buf.m.userptr = (unsigned long) this->FrameBuffers[i].start;
+        buf.length = this->FrameBuffers[i].length;
 
         if (-1 == xioctl(this->FileDescriptor, VIDIOC_QBUF, &buf))
         {
