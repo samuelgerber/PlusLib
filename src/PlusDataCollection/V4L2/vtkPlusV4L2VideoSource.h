@@ -10,10 +10,10 @@
 #include "vtkPlusDataCollectionExport.h"
 #include "vtkPlusDevice.h"
 
+// V4L2 includes
+#include <linux/videodev2.h>
+
 class vtkPlusDataSource;
-struct v4l2_field;
-struct v4l2_format;
-struct v4l2_pix_format;
 
 /*!
  \class vtkPlusV4L2VideoSource
