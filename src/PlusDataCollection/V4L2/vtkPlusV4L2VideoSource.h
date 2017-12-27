@@ -4,8 +4,8 @@
  See License.txt for details.
  =========================================================Plus=header=end*/
 
-#ifndef __vtkPlusOpenCVCaptureVideoSource_h
-#define __vtkPlusOpenCVCaptureVideoSource_h
+#ifndef __vtkPlusV4L2VideoSource_h
+#define __vtkPlusV4L2VideoSource_h
 
 #include "vtkPlusDataCollectionExport.h"
 #include "vtkPlusDevice.h"
@@ -95,25 +95,25 @@ protected:
 
 protected:
   // Configuration variables
-  std::string                     DeviceName;
-  V4L2_IO_METHOD                  IOMethod;
+  std::string                         DeviceName;
+  V4L2_IO_METHOD                      IOMethod;
   // If not nullptr, override these settings in InternalConnect
-  std::shared_ptr<unsigned int>   FormatWidth;
-  std::shared_ptr<unsigned int>   FormatHeight;
-  std::shared_ptr<unsigned int>   PixelFormat;
-  std::shared_ptr<v4l2_field>     FieldOrder;
+  std::shared_ptr<unsigned int>       FormatWidth;
+  std::shared_ptr<unsigned int>       FormatHeight;
+  std::shared_ptr<unsigned int>       PixelFormat;
+  std::shared_ptr<v4l2_field>         FieldOrder;
 
   // State variables
-  int                             FileDescriptor;
-  FrameBuffer*                    FrameBuffers;
-  unsigned int                    BufferCount;
-  vtkPlusDataSource*              DataSource;
-  PlusTrackedFrame::FieldMapType  FrameFields;
-  std::shared_ptr<v4l2_format>    DeviceFormat;
+  int                                 FileDescriptor;
+  FrameBuffer*                        FrameBuffers;
+  unsigned int                        BufferCount;
+  vtkPlusDataSource*                  DataSource;
+  PlusTrackedFrame::FieldMapType      FrameFields;
+  std::shared_ptr<struct v4l2_format> DeviceFormat;
 
   // Cached state variable (duplicate of DeviceFormat members, for passing to Plus functions)
-  FrameSizeType                   ImageSize;
-  uint32_t                        NumberOfScalarComponents; // Calculated from device format in InternalConnect
+  FrameSizeType                       ImageSize;
+  uint32_t                            NumberOfScalarComponents; // Calculated from device format in InternalConnect
 };
 
 #endif

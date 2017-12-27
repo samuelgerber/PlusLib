@@ -80,7 +80,7 @@ void vtkPlusV4L2VideoSource::PrintSelf(ostream& os, vtkIndent indent)
   {
     os << indent << "Available formats: " << std::endl;
 
-    v4l2_fmtdesc fmtdesc;
+    struct v4l2_fmtdesc fmtdesc;
     CLEAR(fmtdesc);
     fmtdesc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     while (ioctl(this->FileDescriptor, VIDIOC_ENUM_FMT, &fmtdesc) == 0)
@@ -128,17 +128,17 @@ PlusStatus vtkPlusV4L2VideoSource::ReadConfiguration(vtkXMLDataElement* rootConf
   }
 
   std::string pixelFormat;
-  XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL("PixelFormat", pixelFormat, deviceConfig);
+  XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL(PixelFormat, pixelFormat, deviceConfig);
   if (deviceConfig->GetAttribute("PixelFormat") != nullptr)
   {
     this->PixelFormat = std::make_shared<unsigned int>(vtkPlusV4L2VideoSource::StringToPixelFormat(pixelFormat));
   }
 
   std::string fieldOrder;
-  XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL("FieldOrder", fieldOrder, deviceConfig);
+  XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL(FieldOrder, fieldOrder, deviceConfig);
   if (deviceConfig->GetAttribute("FieldOrder") != nullptr)
   {
-    this->PixelFormat = std::make_shared<v4l2_field>(vtkPlusV4L2VideoSource::StringToFieldOrder(fieldOrder));
+    this->FieldOrder = std::make_shared<v4l2_field>(vtkPlusV4L2VideoSource::StringToFieldOrder(fieldOrder));
   }
 
   return PLUS_SUCCESS;
@@ -158,7 +158,7 @@ PlusStatus vtkPlusV4L2VideoSource::WriteConfiguration(vtkXMLDataElement* rootCon
 
   deviceConfig->SetAttribute("PixelFormat", vtkPlusV4L2VideoSource::PixelFormatToString(this->DeviceFormat->fmt.pix.pixelformat).c_str());
 
-  deviceConfig->SetAttribute("FieldOrder", vtkPlusV4L2VideoSource::FieldOrderToString(this->DeviceFormat->fmt.pix.field).c_str());
+  deviceConfig->SetAttribute("FieldOrder", vtkPlusV4L2VideoSource::FieldOrderToString(static_cast<v4l2_field>(this->DeviceFormat->fmt.pix.field)).c_str());
 
   return PLUS_SUCCESS;
 }
@@ -191,7 +191,7 @@ PlusStatus vtkPlusV4L2VideoSource::InitRead(unsigned int bufferSize)
 //-----------------------------------------------------------------------------
 PlusStatus vtkPlusV4L2VideoSource::InitMmap()
 {
-  v4l2_requestbuffers req;
+  struct v4l2_requestbuffers req;
 
   CLEAR(req);
 
@@ -256,7 +256,7 @@ PlusStatus vtkPlusV4L2VideoSource::InitMmap()
 //----------------------------------------------------------------------------
 PlusStatus vtkPlusV4L2VideoSource::InitUserp(unsigned int bufferSize)
 {
-  v4l2_requestbuffers req;
+  struct v4l2_requestbuffers req;
 
   CLEAR(req);
 
@@ -379,12 +379,12 @@ PlusStatus vtkPlusV4L2VideoSource::InternalConnect()
   }
 
   // Select video input, video standard and tune here
-  v4l2_cropcap cropcap;
+  struct v4l2_cropcap cropcap;
   CLEAR(cropcap);
   cropcap.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   if (0 == xioctl(this->FileDescriptor, VIDIOC_CROPCAP, &cropcap))
   {
-    v4l2_crop crop;
+    struct v4l2_crop crop;
     CLEAR(crop);
     crop.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     crop.c = cropcap.defrect;
@@ -614,7 +614,7 @@ PlusStatus vtkPlusV4L2VideoSource::ReadFrameFileDescriptor(unsigned int& current
 //----------------------------------------------------------------------------
 PlusStatus vtkPlusV4L2VideoSource::ReadFrameMemoryMap(unsigned int& currentBufferIndex, unsigned int& bytesUsed)
 {
-  v4l2_buffer buf;
+  struct v4l2_buffer buf;
   CLEAR(buf);
 
   buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -749,7 +749,7 @@ PlusStatus vtkPlusV4L2VideoSource::InternalStopRecording()
 //----------------------------------------------------------------------------
 PlusStatus vtkPlusV4L2VideoSource::InternalStartRecording()
 {
-  v4l2_buf_type type;
+  enum v4l2_buf_type type;
 
   switch (this->IOMethod)
   {
@@ -757,7 +757,7 @@ PlusStatus vtkPlusV4L2VideoSource::InternalStartRecording()
     {
       for (unsigned int i = 0; i < this->BufferCount; ++i)
       {
-        v4l2_buffer buf;
+        struct v4l2_buffer buf;
         CLEAR(buf);
         buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         buf.memory = V4L2_MEMORY_MMAP;
@@ -781,7 +781,7 @@ PlusStatus vtkPlusV4L2VideoSource::InternalStartRecording()
     {
       for (unsigned int i = 0; i < this->BufferCount; ++i)
       {
-        v4l2_buffer buf;
+        struct v4l2_buffer buf;
         CLEAR(buf);
         buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         buf.memory = V4L2_MEMORY_USERPTR;
@@ -917,44 +917,6 @@ std::string vtkPlusV4L2VideoSource::PixelFormatToString(unsigned int pixelFormat
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV422P);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV420M);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YVU420M);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV422M);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YVU422M);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YUV444M);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_YVU444M);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR10);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG10);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG10);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB10);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR10P);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG10P);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG10P);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB10P);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR10ALAW8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG10ALAW8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG10ALAW8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB10ALAW8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR10DPCM8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG10DPCM8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG10DPCM8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB10DPCM8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR12);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG12);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG12);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB12);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR12P);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG12P);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG12P);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB12P);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SBGGR16);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGBRG16);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SGRBG16);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SRGGB16);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_HSV24);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_HSV32);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_MJPEG);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_JPEG);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_DV);
@@ -970,7 +932,6 @@ std::string vtkPlusV4L2VideoSource::PixelFormatToString(unsigned int pixelFormat
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_VC1_ANNEX_G);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_VC1_ANNEX_L);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_VP8);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_VP9);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_CPIA1);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_WNVA);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_SN9C10X);
@@ -1000,8 +961,6 @@ std::string vtkPlusV4L2VideoSource::PixelFormatToString(unsigned int pixelFormat
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y8I);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Y12I);
       PIXEL_FORMAT_CASE(V4L2_PIX_FMT_Z16);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_MT21C);
-      PIXEL_FORMAT_CASE(V4L2_PIX_FMT_INZI);
     default:
     {return "V4L2_PIX_FMT_XXXX";}
   }
@@ -1076,44 +1035,6 @@ unsigned int vtkPlusV4L2VideoSource::StringToPixelFormat(const std::string& form
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV422P, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV420M, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YVU420M, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV422M, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YVU422M, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YUV444M, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_YVU444M, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR10, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG10, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG10, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB10, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR10P, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG10P, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG10P, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB10P, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR10ALAW8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG10ALAW8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG10ALAW8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB10ALAW8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR10DPCM8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG10DPCM8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG10DPCM8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB10DPCM8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR12, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG12, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG12, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB12, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR12P, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG12P, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG12P, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB12P, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SBGGR16, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGBRG16, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SGRBG16, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SRGGB16, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_HSV24, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_HSV32, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_MJPEG, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_JPEG, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_DV, format);
@@ -1129,7 +1050,6 @@ unsigned int vtkPlusV4L2VideoSource::StringToPixelFormat(const std::string& form
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_VC1_ANNEX_G, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_VC1_ANNEX_L, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_VP8, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_VP9, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_CPIA1, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_WNVA, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_SN9C10X, format);
@@ -1159,8 +1079,6 @@ unsigned int vtkPlusV4L2VideoSource::StringToPixelFormat(const std::string& form
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y8I, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Y12I, format);
   PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_Z16, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_MT21C, format);
-  PIXEL_FORMAT_STRING_COMPARE(V4L2_PIX_FMT_INZI, format);
   else {return v4l2_fourcc('x', 'x', 'x', 'x');}
 }
 #undef PIXEL_FORMAT_STRING_COMPARE
@@ -1188,19 +1106,16 @@ std::string vtkPlusV4L2VideoSource::FieldOrderToString(v4l2_field field)
 #undef FIELD_ORDER_CASE
 
 //----------------------------------------------------------------------------
-#define FIELD_ORDER_STRING_COMPARE(field, fieldStr) else if (PlusCommon::IsEqualInsensitive(#field, fieldStr)){return field;}
 v4l2_field vtkPlusV4L2VideoSource::StringToFieldOrder(const std::string& field)
 {
   if (PlusCommon::IsEqualInsensitive("V4L2_FIELD_ANY", field)) {return V4L2_FIELD_ANY;}
-  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_NONE, field);
-  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_TOP, field);
-  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_BOTTOM, field);
-  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_INTERLACED, field);
-  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_SEQ_TB, field);
-  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_SEQ_BT, field);
-  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_ALTERNATE, field);
-  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_INTERLACED_TB, field);
-  FIELD_ORDER_STRING_COMPARE(V4L2_FIELD_INTERLACED_BT, field);
+  else if (PlusCommon::IsEqualInsensitive("V4L2_FIELD_TOP", field)){return V4L2_FIELD_TOP;}
+  else if (PlusCommon::IsEqualInsensitive("V4L2_FIELD_BOTTOM", field)){return V4L2_FIELD_BOTTOM;}
+  else if (PlusCommon::IsEqualInsensitive("V4L2_FIELD_INTERLACED", field)){return V4L2_FIELD_INTERLACED;}
+  else if (PlusCommon::IsEqualInsensitive("V4L2_FIELD_SEQ_TB", field)){return V4L2_FIELD_SEQ_TB;}
+  else if (PlusCommon::IsEqualInsensitive("V4L2_FIELD_SEQ_BT", field)){return V4L2_FIELD_SEQ_BT;}
+  else if (PlusCommon::IsEqualInsensitive("V4L2_FIELD_ALTERNATE", field)){return V4L2_FIELD_ALTERNATE;}
+  else if (PlusCommon::IsEqualInsensitive("V4L2_FIELD_INTERLACED_TB", field)){return V4L2_FIELD_INTERLACED_TB;}
+  else if (PlusCommon::IsEqualInsensitive("V4L2_FIELD_INTERLACED_BT", field)){return V4L2_FIELD_INTERLACED_BT;}
   else {return V4L2_FIELD_ANY;}
 }
-#undef FIELD_ORDER_STRING_COMPARE
