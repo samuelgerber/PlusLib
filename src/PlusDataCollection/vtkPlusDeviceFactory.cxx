@@ -321,7 +321,7 @@ vtkPlusDeviceFactory::vtkPlusDeviceFactory()
 #endif
 
 #ifdef PLUS_USE_V4L2
-  RegisterDevice("V4L2", "vtkPlusV4L2VideoSource", (PointerToDevice)&vtkPlusV4L2VideoSource::New);
+  RegisterDevice("V4L2Video", "vtkPlusV4L2VideoSource", (PointerToDevice)&vtkPlusV4L2VideoSource::New);
 #endif
 
 #ifdef PLUS_USE_OPENHAPTICS

@@ -59,7 +59,9 @@ vtkPlusV4L2VideoSource::vtkPlusV4L2VideoSource()
   , FieldOrder(nullptr)
   , DataSource(nullptr)
 {
+  memset(this->DeviceFormat.get(), 0, sizeof(struct v4l2_format));
 
+  this->StartThreadForInternalUpdates = true;
 }
 
 //----------------------------------------------------------------------------
@@ -102,7 +104,7 @@ PlusStatus vtkPlusV4L2VideoSource::ReadConfiguration(vtkXMLDataElement* rootConf
 
   XML_READ_STRING_ATTRIBUTE_REQUIRED(DeviceName, deviceConfig);
   std::string ioMethod;
-  XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL(IOMethod, ioMethod, rootConfigElement);
+  XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL(IOMethod, ioMethod, deviceConfig);
   if (vtkPlusV4L2VideoSource::StringToIOMethod(ioMethod) != IO_METHOD_UNKNOWN)
   {
     this->IOMethod = vtkPlusV4L2VideoSource::StringToIOMethod(ioMethod);
@@ -345,11 +347,6 @@ PlusStatus vtkPlusV4L2VideoSource::InternalConnect()
     return PLUS_FAIL;
   }
 
-#if defined(_DEBUG)
-  // Does while loop work?
-  this->PrintSelf(std::cout, vtkIndent());
-#endif
-
   switch (this->IOMethod)
   {
     case IO_METHOD_READ:
@@ -402,6 +399,7 @@ PlusStatus vtkPlusV4L2VideoSource::InternalConnect()
   }
 
   // Retrieve current v4l2 format settings
+  this->DeviceFormat->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   if (-1 == xioctl(this->FileDescriptor, VIDIOC_G_FMT, this->DeviceFormat.get()))
   {
     LOG_ERROR("VIDIOC_G_FMT" << ": " << strerror(errno));
@@ -647,7 +645,7 @@ PlusStatus vtkPlusV4L2VideoSource::ReadFrameMemoryMap(unsigned int& currentBuffe
   }
 
   currentBufferIndex = buf.index;
-  bytesUsed = buf.bytesused;
+  bytesUsed = buf.length;
 
   return PLUS_SUCCESS;
 }
